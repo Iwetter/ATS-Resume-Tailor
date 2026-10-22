@@ -1,0 +1,226 @@
+[
+  {
+    "name": "Anduril Industries",
+    "source": "greenhouse",
+    "board": "andurilindustries",
+    "career_url": "https://job-boards.greenhouse.io/andurilindustries",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Astranis",
+    "source": "greenhouse",
+    "board": "astranis",
+    "career_url": "https://job-boards.greenhouse.io/astranis",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Rocket Lab Corporation",
+    "source": "greenhouse",
+    "board": "rocketlab",
+    "career_url": "https://job-boards.greenhouse.io/rocketlab",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Relativity Space",
+    "source": "greenhouse",
+    "board": "relativity",
+    "career_url": "https://job-boards.greenhouse.io/relativity",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Figure",
+    "source": "greenhouse",
+    "board": "figureai",
+    "career_url": "https://job-boards.greenhouse.io/figureai",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Nuro",
+    "source": "greenhouse",
+    "board": "nuro",
+    "career_url": "https://job-boards.greenhouse.io/nuro",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Redwood Materials",
+    "source": "greenhouse",
+    "board": "redwoodmaterials",
+    "career_url": "https://job-boards.greenhouse.io/redwoodmaterials",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Waymo",
+    "source": "greenhouse",
+    "board": "waymo",
+    "career_url": "https://job-boards.greenhouse.io/waymo",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Verkada",
+    "source": "greenhouse",
+    "board": "verkada",
+    "career_url": "https://job-boards.greenhouse.io/verkada",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Samsara",
+    "source": "greenhouse",
+    "board": "samsara",
+    "career_url": "https://job-boards.greenhouse.io/samsara",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Neuralink",
+    "source": "greenhouse",
+    "board": "neuralink",
+    "career_url": "https://job-boards.greenhouse.io/neuralink",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "IonQ",
+    "source": "greenhouse",
+    "board": "ionq",
+    "career_url": "https://job-boards.greenhouse.io/ionq",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Epirus",
+    "source": "greenhouse",
+    "board": "epirus",
+    "career_url": "https://job-boards.greenhouse.io/epirus",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Shield AI",
+    "source": "lever",
+    "board": "shieldai",
+    "career_url": "https://jobs.lever.co/shieldai",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Zoox",
+    "source": "lever",
+    "board": "zoox",
+    "career_url": "https://jobs.lever.co/zoox",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Reliable Robotics",
+    "source": "lever",
+    "board": "reliable",
+    "career_url": "https://jobs.lever.co/reliable",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Saronic",
+    "source": "ashby",
+    "board": "saronic",
+    "career_url": "https://jobs.ashbyhq.com/saronic",
+    "enabled": false,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Standard Bots",
+    "source": "ashby",
+    "board": "standardbots",
+    "career_url": "https://jobs.ashbyhq.com/standardbots",
+    "enabled": false,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Crusoe",
+    "source": "ashby",
+    "board": "crusoe",
+    "career_url": "https://jobs.ashbyhq.com/crusoe",
+    "enabled": false,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Western Digital",
+    "source": "smartrecruiters",
+    "board": "WesternDigital",
+    "career_url": "https://careers.smartrecruiters.com/WesternDigital",
+    "enabled": false,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "SpaceX",
+    "source": "greenhouse",
+    "board": "spacex",
+    "career_url": "https://job-boards.greenhouse.io/spacex",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Vast",
+    "source": "greenhouse",
+    "board": "vast",
+    "career_url": "https://job-boards.greenhouse.io/vast",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Formlabs",
+    "source": "greenhouse",
+    "board": "formlabs",
+    "career_url": "https://job-boards.greenhouse.io/formlabs",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Markforged",
+    "source": "greenhouse",
+    "board": "markforged",
+    "career_url": "https://job-boards.greenhouse.io/markforged",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Bosch Group",
+    "source": "smartrecruiters",
+    "board": "BoschGroup",
+    "career_url": "https://careers.smartrecruiters.com/BoschGroup",
+    "enabled": false,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "NVIDIA",
+    "source": "workday",
+    "board": "nvidia-wd5-NVIDIAExternalCareerSite",
+    "career_url": "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "RTX",
+    "source": "workday",
+    "board": "globalhr-wd5-REC_RTX_Ext_Gateway",
+    "career_url": "https://globalhr.wd5.myworkdayjobs.com/REC_RTX_Ext_Gateway",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  },
+  {
+    "name": "GE Vernova",
+    "source": "workday",
+    "board": "gevernova-wd5-Vernova_ExternalSite",
+    "career_url": "https://gevernova.wd5.myworkdayjobs.com/Vernova_ExternalSite",
+    "enabled": true,
+    "verified_at": "2026-10-20"
+  }
+]

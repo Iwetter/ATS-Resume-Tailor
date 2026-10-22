@@ -1,0 +1,6 @@
+{
+  "fixture_kind": "synthetic API-shaped regression data, not live opportunities",
+  "jobs": [{"id": 101, "title": "Hardware Engineering Intern - Summer 2027", "updated_at": "2026-10-20T10:00:00Z", "absolute_url": "https://job-boards.greenhouse.io/fixture/jobs/101", "location": {"name": "Atlanta, GA"}}],
+  "meta": {"total": 1},
+  "detail": {"id": 101, "title": "Hardware Engineering Intern - Summer 2027", "first_published": "2026-10-19T10:00:00Z", "updated_at": "2026-10-20T10:00:00Z", "absolute_url": "https://job-boards.greenhouse.io/fixture/jobs/101", "location": {"name": "Atlanta, GA"}, "content": "&lt;h2&gt;Required&lt;/h2&gt;&lt;p&gt;Experience with PCB development, KiCad and hardware testing. Minimum GPA 3.0. Must be authorized to work in the United States.&lt;/p&gt;&lt;h2&gt;Responsibilities&lt;/h2&gt;&lt;p&gt;Design and test electronic circuit boards using an oscilloscope.&lt;/p&gt;&lt;h2&gt;Preferred&lt;/h2&gt;&lt;p&gt;C++ firmware and I2C experience preferred.&lt;/p&gt;"}
+}

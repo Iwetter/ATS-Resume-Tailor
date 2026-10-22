@@ -1,0 +1,411 @@
+from __future__ import annotations
+
+from dataclasses import asdict, replace
+from difflib import SequenceMatcher
+from html import escape
+import json
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+from ats.extraction import InputError, extract_document, fetch_job
+from ats.exporting import ExportError, export_resume
+from ats.matching import (HEADINGS, extract_requirements, make_resume, parse_resume, rank_bullets, rank_projects, select_projects, validate_requirements)
+from ats.models import Change, Extracted, digest
+from ats.rewriting import (ModelConfig, apply_changes, parse_changes, rewrite_request, tailor_once, validate_change)
+from ats.scoring import DEFAULT_WEIGHTS, analyze
+
+ROOT = Path(__file__).parent
+JOB_URL = "https://jobs.smartrecruiters.com/WesternDigital/744000140949875-summer-2027-intern-hardware-engineering"
+st.set_page_config(page_title="Resume Bench | ATS Grader & Tailor", page_icon="📄", layout="wide")
+st.markdown("""<style>
+.block-container {max-width:1250px;padding-top:2.5rem}
+h1 {letter-spacing:-.04em} h2 {letter-spacing:-.025em}
+.eyebrow {font-size:.8rem;letter-spacing:.16em;color:#17635A;font-weight:700}
+.diff {padding:1rem;background:white;border:1px solid #d9e0da;border-radius:8px;line-height:1.7}
+del {background:#fce5e2;color:#8c2420;text-decoration:line-through}
+ins {background:#d5efe2;color:#154f38;text-decoration:none}
+[data-testid="stMetric"] {background:white;border:1px solid #d9e0da;border-radius:10px;padding:1rem}
+</style>""", unsafe_allow_html=True)
+
+
+def reset_review():
+    for key in ("tailored", "proposals", "api_usage", "bundle", "bundle_hash", "import_error"):
+        st.session_state.pop(key, None)
+
+
+def diffs(before: str, after: str) -> tuple[str, str]:
+    old, new = before.split(), after.split()
+    left, right = [], []
+    for op, i, j, k, l in SequenceMatcher(a=old, b=new).get_opcodes():
+        a, b = escape(" ".join(old[i:j])), escape(" ".join(new[k:l]))
+        if a:
+            left.append(f"<del>{a}</del>" if op != "equal" else a)
+        if b:
+            right.append(f"<ins>{b}</ins>" if op != "equal" else b)
+    return " ".join(left), " ".join(right)
+
+
+def requirement_rows(reqs):
+    return [{**asdict(r), "terms": "; ".join(r.terms)} for r in reqs]
+
+
+def diagnostics(result, resume, requirements):
+    req_map = {r.id: r for r in requirements}
+    rows = []
+    for match in result.matches:
+        r = req_map[match.requirement_id]
+        evidence = "\n".join(f"{eid}: {resume.by_id[eid].text}" for eid in match.evidence_ids if eid in resume.by_id)
+        rows.append({"Requirement": "/".join(r.terms) if r.kind == "skill" else r.text, "Priority": r.priority, "Type": r.kind, "Status": match.status, "Supporting evidence": evidence, "Explanation": match.explanation})
+    categories = st.tabs(["Requirements & evidence", "Formatting & score details", "Priority improvements"])
+    with categories[0]:
+        if rows:
+            st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch", column_config={"Supporting evidence": st.column_config.TextColumn(width="large"), "Requirement": st.column_config.TextColumn(width="large")})
+        else:
+            st.warning("No requirements extracted. Add requirements in the editor above.")
+        st.caption("Supported = a positive accomplishment bullet; partial = mention or incomplete evidence. Responsibility similarity is lexical and needs review. Unknown eligibility is not a finding of ineligibility.")
+    with categories[1]:
+        a, b = st.columns(2)
+        a.dataframe(pd.DataFrame([{"Alignment component": k, "Score / 100": v} for k, v in result.components.items()]), hide_index=True)
+        b.dataframe(pd.DataFrame([{"Readability check": k, "Points": v} for k, v in result.checks.items()]), hide_index=True)
+        for warning in result.warnings:
+            st.warning(warning)
+        st.caption("Heuristics, not an employer ATS algorithm or interview probability. Missing measurement contributes 0. Repeated terms do not increase skill coverage or binary TF-IDF similarity.")
+    with categories[2]:
+        if result.improvements:
+            for improvement in result.improvements:
+                st.write("• " + improvement)
+        else:
+            st.write("Review the evidence table and eligibility conditions before applying.")
+
+
+if st.session_state.pop("hunter_navigate", False):
+    st.session_state.workspace_page = "Resume Grader & Tailor"
+    pending = st.session_state.pop("hunter_pending_job", None)
+    if pending:
+        st.session_state.pop("phase1_upload", None)
+        st.session_state.hunter_job = pending
+        st.session_state.job_input = pending["description"]
+        st.session_state.job_origin = pending["company"] + " · " + pending["title"]
+        st.session_state.pop("analysis", None)
+        reset_review()
+
+with st.sidebar:
+    st.markdown("### Resume Bench")
+    workspace_page = st.radio("Workspace", ["Resume Grader & Tailor", "Internship Hunter"], key="workspace_page")
+    st.caption("LOCAL FIRST · ENGINEERING INTERNSHIPS")
+    st.write("1. Verify extraction\n\n2. Analyze evidence\n\n3. Review tailoring\n\n4. Validate & download")
+    st.divider()
+    st.markdown("**Optional AI rewriting**")
+    enabled = st.toggle("Enable paid OpenAI rewriting", value=False)
+    api_key = st.text_input("OpenAI API key", type="password", disabled=not enabled, help="Kept only in this local session; never read automatically from environment or saved to disk.")
+    model = st.text_input("Model ID", disabled=not enabled, placeholder="A model you have configured for structured outputs")
+    output_budget = st.number_input("Maximum output tokens", min_value=256, max_value=3000, value=1800, step=128, disabled=not enabled)
+    st.caption("Only Tailor Resume can send selected bullets and relevant requirements. One attempt per unique operation, including failures. No automatic retries.")
+    st.divider()
+    with st.expander("Alignment weights"):
+        weights = {key: st.number_input(key.replace("_", " ").title(), 0.0, 100.0, float(value), 5.0, key="weight_"+key) for key, value in DEFAULT_WEIGHTS.items()}
+    st.caption("Phase 1 sessions stay in memory. Hunter saves verified masters, jobs, approved exports and its rewrite cache locally in data/. Downloads are explicit local copies.")
+    if st.button("Clear current session"):
+        st.session_state.clear()
+        st.rerun()
+
+if workspace_page == "Internship Hunter":
+    from hunter.ui import render
+    render()
+    st.stop()
+
+st.markdown('<div class="eyebrow">RESUME BENCH / APPLICATION WORKSPACE</div>', unsafe_allow_html=True)
+st.title("A stronger application, backed by evidence.")
+st.write("Check ATS readability, compare job requirements, and tailor your engineering resume with every fact traceable to its source.")
+st.caption("Local grading is free of API calls. Your uploaded resume is authoritative; profile defaults never add claims.")
+if st.session_state.get("hunter_job"):
+    context = st.session_state.hunter_job
+    st.info("Hunter job: " + context["company"] + " · " + context["title"] + ". Analyze, review changes, then save the validated job-specific copy below.")
+    st.link_button("Official Hunter application link", context["url"])
+
+left, right = st.columns(2, gap="large")
+with left:
+    st.subheader("01  Master resume")
+    upload = st.file_uploader("Upload PDF or DOCX", type=["pdf", "docx"], key="phase1_upload")
+    if st.button("Use fictional test resume", help="Demonstration only. This is not your verified resume."):
+        st.session_state.demo = True
+        st.session_state.pop("source_hash", None)
+    if upload:
+        source_bytes, source_name = upload.getvalue(), upload.name
+        source_hash = digest(source_bytes)
+        if st.session_state.get("source_hash") != source_hash:
+            try:
+                extracted = extract_document(source_bytes, source_name)
+                st.session_state.update(source_hash=source_hash, extracted=extracted, master=parse_resume(extracted.text, source_hash), original_bytes=source_bytes, original_name=source_name, demo=False)
+                reset_review()
+                st.session_state.pop("analysis", None)
+            except InputError as exc:
+                st.error(str(exc))
+                st.stop()
+    elif st.session_state.get("demo") and "source_hash" not in st.session_state:
+        text = (ROOT / "tests/fixtures/fictional_resume.txt").read_text(encoding="utf-8")
+        source_hash = digest(text)
+        st.session_state.update(source_hash=source_hash, extracted=Extracted(text, "demo"), master=parse_resume(text, source_hash))
+        st.session_state.pop("original_bytes", None)
+        reset_review()
+        st.session_state.pop("analysis", None)
+    if st.session_state.get("demo"):
+        st.warning("Fictional test data is loaded. Upload your resume for an actual application.")
+    if "extracted" in st.session_state:
+        with st.expander("Preview extracted resume", expanded=True):
+            st.text(st.session_state.extracted.text)
+            for message in st.session_state.extracted.warnings:
+                st.warning(message)
+        if st.session_state.get("original_bytes"):
+            st.download_button("Download untouched master", st.session_state.original_bytes, "master-original" + Path(st.session_state.original_name).suffix.lower())
+with right:
+    st.subheader("02  Job description")
+    url = st.text_input("Job posting URL", value=JOB_URL)
+    a, b = st.columns(2)
+    if a.button("Fetch job URL"):
+        try:
+            with st.spinner("Retrieving job description…"):
+                fetched = fetch_job(url)
+            st.session_state.job_input = fetched
+            st.session_state.job_origin = url
+        except InputError as exc:
+            st.error(str(exc))
+    if b.button("Use saved Western Digital example"):
+        st.session_state.job_input = (ROOT / "tests/fixtures/western_digital_job.txt").read_text(encoding="utf-8")
+        st.session_state.job_origin = "Saved posting snapshot · retrieved October 20, 2026"
+    job_text = st.text_area("Paste or review job description", key="job_input", height=340, placeholder="Paste the complete responsibilities and qualifications here.")
+    if st.session_state.get("job_origin"):
+        st.caption(st.session_state.job_origin)
+    st.caption("Review fetched text before analysis. For a posting covering multiple tracks, remove unrelated requirements in the editor.")
+
+if "master" not in st.session_state or not job_text.strip():
+    st.info("Add a master resume and job description to open the evidence workspace.")
+    st.stop()
+
+master, extracted = st.session_state.master, st.session_state.extracted
+with st.expander("Verify evidence ledger & section grouping"):
+    st.caption("All original text is retained. Correct only line classification/grouping here. Shared project group IDs keep titles, dates, and bullets together. Non-project evidence is always retained.")
+    ledger_rows = [asdict(x) for x in master.items]
+    ledger_edit = st.data_editor(pd.DataFrame(ledger_rows), hide_index=True, disabled=["id", "text"], key="ledger_"+master.source_hash,
+        column_config={"kind": st.column_config.SelectboxColumn(options=["header", "section", "entry", "bullet", "skill", "text"], required=True), "section": st.column_config.SelectboxColumn(options=["Header", *dict.fromkeys(HEADINGS.values())], required=True)})
+    if st.button("Apply grouping corrections"):
+        allowed_kinds = {"header", "section", "entry", "bullet", "skill", "text"}
+        allowed_sections = {"Header", *HEADINGS.values()}
+        try:
+            rows = ledger_edit.to_dict("records")
+            revised = []
+            for original, row in zip(master.items, rows):
+                if row["kind"] not in allowed_kinds or row["section"] not in allowed_sections:
+                    raise ValueError("Choose a supported evidence kind and section.")
+                revised.append(replace(original, kind=row["kind"], section=row["section"], group=str(row["group"] or "")))
+            st.session_state.master = make_resume(tuple(revised), master.source_hash)
+            st.session_state.pop("analysis", None)
+            reset_review()
+            st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
+    st.dataframe(pd.DataFrame([asdict(f) for f in master.facts]), hide_index=True)
+    st.download_button("Download factual evidence ledger", json.dumps({"source_hash": master.source_hash, "items": ledger_rows, "facts": [asdict(f) for f in master.facts]}, indent=2, ensure_ascii=False), "evidence-ledger.json", "application/json")
+
+version = digest([master.source_hash, job_text])[:14]
+try:
+    extracted_reqs = extract_requirements(job_text)
+except ValueError as exc:
+    st.warning(str(exc))
+    st.stop()
+
+st.subheader("03  Requirements & diagnostics")
+with st.expander("Edit extracted requirements before analysis", expanded=True):
+    st.caption("Each skill row uses semicolon-separated terms. “any” represents alternatives; “all” requires every term. Required, preferred and contextual priorities have weights 2, 1 and 0.5. Eligibility is reported separately from alignment. Verify a hard condition with an explicit note, or leave it unknown.")
+    columns = ["id", "text", "kind", "priority", "terms", "mode", "assertion", "note"]
+    edited = st.data_editor(pd.DataFrame(requirement_rows(extracted_reqs), columns=columns), key="reqs_"+version, num_rows="dynamic", hide_index=True, disabled=["id"], width="stretch", column_config={
+        "kind": st.column_config.SelectboxColumn(options=["skill", "responsibility", "eligibility"], required=True),
+        "priority": st.column_config.SelectboxColumn(options=["required", "preferred", "context"], required=True),
+        "mode": st.column_config.SelectboxColumn(options=["all", "any"], required=True),
+        "assertion": st.column_config.SelectboxColumn(options=["unknown", "met", "unmet"], required=True),
+        "text": st.column_config.TextColumn(width="large")})
+try:
+    requirements = validate_requirements(edited.fillna("").to_dict("records"))
+except ValueError as exc:
+    st.error(str(exc))
+    st.stop()
+analysis_hash = digest([[asdict(x) for x in master.items], job_text, [asdict(x) for x in requirements], weights])
+if st.button("Analyze Resume", type="primary"):
+    try:
+        with st.spinner("Checking requirements against original evidence…"):
+            result = analyze(master, extracted, requirements, weights)
+        if st.session_state.get("analysis_hash") != analysis_hash:
+            reset_review()
+        st.session_state.update(analysis=result, analysis_hash=analysis_hash)
+    except ValueError as exc:
+        st.error(str(exc))
+if st.session_state.get("analysis_hash") != analysis_hash or "analysis" not in st.session_state:
+    st.info("Click Analyze Resume to score the current source, requirements, and weights.")
+    st.stop()
+before = st.session_state.analysis
+a, b = st.columns(2)
+a.metric("ATS readability · original", f"{before.readability:.0f} / 100")
+b.metric("Job alignment · original", f"{before.alignment:.0f} / 100")
+diagnostics(before, master, requirements)
+
+st.divider()
+st.subheader("04  Tailor & review")
+ranked = rank_projects(master, requirements)
+names = {group: f"{title} · relevance {score:.2f}" for group, score, title in ranked}
+groups = [g for g, _, _ in ranked]
+selected_groups = st.multiselect("Projects to include, in export order", groups, default=groups[:4] if st.session_state.get("hunter_job") else groups, format_func=lambda g: names[g], key="projects_"+analysis_hash[:12])
+st.caption(("Hunter proposes the four most relevant projects; review the selection and omissions. " if st.session_state.get("hunter_job") else "Projects are ranked locally; all are retained by default. ") + "Usually choose 3–4 for a student resume. Selecting fewer is an explicit omission; relevant experience is never dropped automatically. Remove and re-add a project to change its order.")
+omitted = [names[g] for g in groups if g not in selected_groups]
+if omitted:
+    st.warning("Projects omitted from this draft: " + "; ".join(omitted))
+draft = select_projects(master, selected_groups)
+if st.session_state.get("hunter_job"):
+    from hunter.service import order_skills
+    draft = order_skills(draft, requirements)
+bullet_ranking = rank_bullets(draft, requirements)
+all_bullet_ids = [eid for eid, _ in bullet_ranking]
+bullet_labels = {eid: f"{draft.by_id[eid].text[:125]} · relevance {score:.2f}" for eid, score in bullet_ranking}
+with st.expander("Select accomplishment bullets for the export"):
+    included_bullets = st.multiselect("Accomplishment bullets to include", all_bullet_ids, default=all_bullet_ids, format_func=lambda eid: bullet_labels[eid], key="included_"+digest([analysis_hash, selected_groups])[:12])
+    st.caption("Ranked locally; every bullet is included by default. Deselecting a bullet explicitly omits it. Its role/project title and dates remain. Prefer keeping verified evidence for required skills.")
+omitted_bullets = [eid for eid in all_bullet_ids if eid not in included_bullets]
+if omitted_bullets:
+    st.warning("Accomplishment bullets explicitly omitted: " + ", ".join(omitted_bullets))
+draft = make_resume(tuple(x for x in draft.items if x.kind != "bullet" or x.id in included_bullets), master.source_hash)
+labels = {eid: draft.by_id[eid].text[:130] for eid in all_bullet_ids if eid in included_bullets}
+selected_ids = st.multiselect("Bullets to review or send for rewriting (at most 8)", list(labels), default=list(labels)[:8], format_func=lambda eid: labels[eid], max_selections=8, key="bullets_"+digest([analysis_hash, selected_groups])[:12])
+request = None
+if selected_ids:
+    try:
+        request = rewrite_request(master, requirements, selected_ids)
+        st.download_button("Download compact Codex rewrite request", json.dumps(request, ensure_ascii=False, indent=2), "rewrite-request.json", "application/json")
+        with st.expander("Inspect exact AI payload"):
+            st.json(request)
+            st.caption(f"{len(json.dumps(request, ensure_ascii=False)):,} characters total, with at most {int(output_budget):,} output tokens. Actual token counts vary by model.")
+    except ValueError as exc:
+        st.warning(str(exc))
+if st.button("Tailor Resume", type="primary", disabled=not selected_ids or request is None):
+    reset_review()
+    if enabled:
+        try:
+            with st.spinner("Making one bounded rewrite request…"):
+                if st.session_state.get("hunter_job"):
+                    from hunter.storage import Store
+                    from hunter.service import RewriteCache
+                    rewrite_cache = RewriteCache(Store(st.session_state.hunter_job["db"]))
+                else:
+                    rewrite_cache = st.session_state.setdefault("rewrite_cache", {})
+                value = tailor_once(master, job_text, requirements, selected_ids, ModelConfig(model, int(output_budget)), api_key, intentional=True, enabled=True, cache=rewrite_cache)
+            st.session_state.proposals = {c.source_ids[0]: c for c in value["changes"]}
+            st.session_state.api_usage = {"cached": value["cache_hit"], **value["usage"]}
+            st.session_state.tailored = True
+        except ValueError as exc:
+            st.error(str(exc))
+    else:
+        st.session_state.tailored = True
+        st.session_state.proposals = {}
+
+if not st.session_state.get("tailored"):
+    st.info("Click Tailor Resume to open the review editor. With AI disabled, selection and manual editing run locally.")
+    st.stop()
+if not enabled:
+    st.info("Local mode: projects have been ranked and selected. No AI rewriting occurred. Edit bullets below or import the JSON returned from your compact request.")
+if st.session_state.get("api_usage"):
+    st.caption("API usage: " + json.dumps(st.session_state.api_usage))
+with st.expander("Import proposed changes from Codex"):
+    imported = st.text_area("Structured rewrite JSON", key="import_json", height=150)
+    if st.button("Load proposals for review"):
+        try:
+            changes = parse_changes(imported, set(selected_ids))
+            st.session_state.proposals = {c.source_ids[0]: c for c in changes}
+            st.session_state.pop("bundle", None)
+            st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
+
+proposals = st.session_state.get("proposals", {})
+approved, changes = set(), []
+review_key = digest([analysis_hash, selected_ids, [asdict(c) for c in proposals.values()]])[:12]
+for eid in selected_ids:
+    source = master.by_id[eid]
+    proposal = proposals.get(eid)
+    with st.expander(f"{eid} · {source.text[:85]}", expanded=True):
+        st.caption("Source: " + eid + (" · " + proposal.justification if proposal else " · Manual editor"))
+        proposed_text = st.text_area("Proposed bullet", value=proposal.proposed_text if proposal else source.text, key="edit_"+review_key+eid)
+        change = Change((eid,), source.text, proposed_text, proposal.justification if proposal else "Manual edit")
+        result = validate_change(change, master)
+        before_html, after_html = diffs(source.text, proposed_text)
+        old_col, new_col = st.columns(2)
+        old_col.caption("ORIGINAL")
+        old_col.markdown('<div class="diff">'+before_html+'</div>', unsafe_allow_html=True)
+        new_col.caption("PROPOSED")
+        new_col.markdown('<div class="diff">'+after_html+'</div>', unsafe_allow_html=True)
+        if result.status == "rejected":
+            for reason in result.reasons:
+                st.error(reason)
+        elif result.status == "review":
+            st.warning(result.reasons[0])
+        decision = st.radio("Decision", ["Keep original", "Approve change", "Reject change"], horizontal=True, disabled=result.status != "review", key="approve_"+review_key+eid+digest(proposed_text)[:8])
+        changes.append(change)
+        if decision == "Approve change" and result.status == "review":
+            approved.add(eid)
+
+reviewed = apply_changes(master, draft, tuple(changes), approved)
+after = analyze(reviewed, Extracted(reviewed.text, "draft"), requirements, weights)
+a, b = st.columns(2)
+a.metric("Job alignment · reviewed draft", f"{after.alignment:.0f} / 100", f"{after.alignment-before.alignment:+.1f} points")
+b.metric("Approved bullet changes", len(approved))
+st.caption("Draft alignment uses only selected projects and explicitly approved edits. Unchanged scores are expected when tailoring improves wording without adding evidence. Export readability is checked on the generated PDF below.")
+with st.expander("Review final draft and evidence"):
+    st.text(reviewed.text)
+    diagnostics(after, reviewed, requirements)
+
+st.subheader("05  Validate & download")
+bundle_hash = digest([analysis_hash, [asdict(x) for x in reviewed.items]])
+if st.button("Generate validated PDF & DOCX", type="primary"):
+    st.session_state.pop("bundle", None)
+    try:
+        with st.spinner("Generating one-page files and checking all selected text…"):
+            bundle = export_resume(reviewed)
+        st.session_state.update(bundle=bundle, bundle_hash=bundle_hash)
+    except (ExportError, ValueError) as exc:
+        st.error(str(exc))
+if st.session_state.get("bundle_hash") == bundle_hash and "bundle" in st.session_state:
+    bundle = st.session_state.bundle
+    verified = extract_document(bundle.pdf, "tailored.pdf")
+    final = analyze(reviewed, verified, requirements, weights)
+    st.success(f"PDF verified: {bundle.pages} page, {bundle.font_size:g} pt body; all selected evidence is extractable. DOCX text is verified.")
+    c1, c2 = st.columns(2)
+    c1.metric("ATS readability · exported PDF", f"{final.readability:.0f} / 100", f"{final.readability-before.readability:+.1f} points")
+    c2.metric("Job alignment · exported resume", f"{final.alignment:.0f} / 100", f"{final.alignment-before.alignment:+.1f} points")
+    c1.download_button("Download tailored PDF", bundle.pdf, "tailored-resume.pdf", "application/pdf")
+    c2.download_button("Download editable DOCX", bundle.docx, "tailored-resume.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    audit = {"source_hash": master.source_hash, "omitted_projects": omitted, "omitted_bullet_ids": omitted_bullets, "approved_changes": [asdict(c) for c in changes if c.source_ids[0] in approved], "requirements": [asdict(r) for r in requirements], "weights": weights, "before": asdict(before), "after": asdict(final), "pdf_pages": bundle.pages}
+    st.download_button("Download analysis & approval record", json.dumps(audit, ensure_ascii=False, indent=2), "analysis-record.json", "application/json")
+    hunter_context = st.session_state.get("hunter_job")
+    if hunter_context:
+        source_matches = master.source_hash == hunter_context["source_hash"] and job_text == hunter_context["description"]
+        if not source_matches:
+            st.warning("Resume source or job text changed. Return to Hunter and select the intended job before saving a linked copy.")
+        if st.button("Save validated resume to Internship Hunter", disabled=not source_matches):
+            from hunter.storage import Store
+            from hunter.models import Job
+            from hunter.service import score_job
+            hunter_store = Store(hunter_context["db"])
+            stored_job = Job(**json.loads(hunter_store.job(hunter_context["key"])["payload"]))
+            original_fit = score_job(stored_job, master, hunter_store)
+            tailored_fit = score_job(stored_job, reviewed, hunter_store)
+            metadata = {"company": stored_job.company, "title": stored_job.title, "source_hash": master.source_hash,
+                        "original_fit_estimate": original_fit["fit"] if original_fit else None, "tailored_fit_estimate": tailored_fit["fit"] if tailored_fit else None,
+                        "approved_change_ids": sorted(approved), "pdf_pages": bundle.pages, "official_url": stored_job.url}
+            artifact_key = hunter_store.save_artifact(hunter_context["key"], bundle, audit, metadata)
+            st.success("Saved job-specific PDF, DOCX and approval record to Hunter: " + artifact_key[:12])
+    with st.expander("Preview generated PDF"):
+        import pymupdf
+        with pymupdf.open(stream=bundle.pdf, filetype="pdf") as pdf:
+            st.image(pdf[0].get_pixmap(matrix=pymupdf.Matrix(1.4, 1.4)).tobytes("png"), caption="Verified one-page PDF")
+    st.caption("Open the DOCX in Word to confirm pagination: Word's layout engine can differ from the verified PDF. Review final links and factual meaning before submitting.")
+elif "bundle" in st.session_state:
+    st.info("Draft or analysis settings changed. Generate fresh validated files before downloading.")

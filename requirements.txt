@@ -1,0 +1,8 @@
+streamlit==1.50.0
+PyMuPDF==1.26.5
+python-docx==1.2.0
+scikit-learn==1.7.2
+reportlab==4.4.4
+requests==2.32.5
+beautifulsoup4==4.14.2
+pytest==8.4.2

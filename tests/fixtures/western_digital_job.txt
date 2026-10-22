@@ -1,0 +1,182 @@
+Summer 2027 Intern - Hardware Engineering
+Job Description
+
+This posting supports current and anticipated early-career hiring needs. Applying allows our recruiting team to consider you for opportunities that align with your qualifications, preferences, and availability. An immediate opening or interview is not guaranteed.
+
+Where are these roles located? You’ll have the opportunity to work with teams in:
+Colorado Springs, Colorado
+Irvine, California
+Longmont, Colorado
+Fremont, California
+Rochester, Minnesota
+San Jose, California
+
+ASIC Engineering
+
+Design the silicon powering the future of data storage.
+As an ASIC Engineer, you’ll help create the custom chips that power next-generation hard disk drives (HDDs). Working alongside experienced engineers, you’ll contribute to digital design, verification, simulation, and optimization to deliver high-performance, energy-efficient products at global scale.
+
+What you’ll do
+Design and verify ASIC architectures and digital logic
+Build simulations and validate complex hardware designs
+Support the ASIC development lifecycle—from architecture through synthesis, place-and-route, and timing closure
+Optimize performance, power, and reliability
+Collaborate across hardware, firmware, and systems engineering teams
+
+Technologies you’ll use
+ASIC Design • RTL • Verilog/SystemVerilog • Digital Logic • Verification • Simulation • Timing Analysis • Low-Power Design
+Why you’ll love this role
+
+Help build technology that stores the world’s data.
+Learn from experienced semiconductor engineers.
+Work on cutting-edge silicon development.
+Solve challenging engineering problems with cross-functional teams.
+Build highly transferable chip design skills.
+
+Hardware Development Engineering
+
+Build the hardware behind the world’s data.
+As a Hardware Development Engineer, you’ll help develop the technologies that make modern data storage faster, more reliable, and higher capacity. You’ll design, prototype, validate, and improve hardware while solving real engineering challenges alongside multidisciplinary teams.
+
+What you’ll do
+Design and develop electronic hardware and magnetic recording systems
+Create validation strategies and automated test solutions
+Perform reliability, stress, and performance testing
+Analyze circuit boards, processors, sensors, and other hardware components
+Improve products from prototype through manufacturing
+
+Technologies you’ll use
+Electronics • PCB Design • Signal Integrity • Hardware Validation • Reliability Engineering • Test Engineering • Data Analysis
+
+Why you’ll love this role
+Design products used around the world.
+Work with advanced recording technologies.
+Gain hands-on laboratory experience.
+Collaborate with experts across multiple engineering disciplines.
+See your designs move from concept to production.
+
+
+
+Firmware Engineering
+
+Bring hardware to life through software.
+As a Firmware Engineer, you’ll develop the embedded software that controls advanced storage devices. You’ll work at the intersection of hardware and software, building reliable, high-performance firmware that enables world-class products.
+
+What you’ll do
+Design, develop, and debug embedded firmware
+Write software in C, C++, Assembly, and other low-level languages
+Integrate firmware with analog and digital hardware
+Troubleshoot hardware-software interactions
+Improve system performance, functionality, and reliability
+
+Technologies you’ll use
+Embedded Systems • C • C++ • Assembly • RTOS • Hardware Interfaces • Firmware Validation • Debugging
+
+Why you’ll love this role
+Build software that directly controls hardware.
+Solve complex engineering challenges.
+Work closely with both hardware and software engineers.
+Learn how products operate at the lowest level.
+Develop highly sought-after embedded systems skills.
+
+Systems Design & Integration Engineering
+
+Connect hardware and software into complete products.
+As a Systems Design & Integration Engineer, you’ll bring together hardware, firmware, and software to create reliable, high-performing storage systems. You’ll solve integration challenges and ensure every subsystem works seamlessly together.
+
+What you’ll do
+Define system requirements and technical specifications
+Integrate hardware, firmware, and software components
+Coordinate subsystem development across engineering teams
+Troubleshoot complex system-level issues
+Improve product performance, compatibility, and reliability
+
+Technologies you’ll use
+Systems Engineering • Integration • Validation • Root Cause Analysis • Product Development • Cross-Functional Engineering
+
+Why you’ll love this role
+Work across multiple engineering disciplines.
+Understand how complete products come together.
+Solve challenging integration problems.
+Gain broad technical exposure.
+Build systems-level engineering expertise.
+
+Mechanical Design Engineering
+
+Engineer the mechanics behind breakthrough technology.
+As a Mechanical Design Engineer, you’ll design the precision mechanical systems that support advanced storage products. From concept through manufacturing, you’ll help create innovative, reliable, and manufacturable solutions.
+
+What you’ll do
+Design mechanical components, assemblies, and packaging
+Develop prototypes and evaluate new concepts
+Perform engineering analysis and design validation
+Conduct testing to improve performance and reliability
+Partner with manufacturing teams to prepare products for production
+
+Technologies you’ll use
+CAD • Mechanical Design • Product Development • Prototype Testing • Design Validation • Manufacturing Engineering
+
+Why you’ll love this role
+Turn ideas into real products.
+Design precision mechanical systems.
+Build and test prototypes.
+Collaborate across engineering teams.
+See your designs manufactured at scale.
+
+Equipment Engineering
+
+Build smarter manufacturing.
+
+As an Equipment Engineer, you’ll optimize the advanced manufacturing equipment used to build world-class storage technology. You’ll improve equipment performance, increase reliability, and help solve complex production challenges.
+
+What you’ll do
+Install, upgrade, and optimize manufacturing equipment
+Improve equipment uptime, reliability, and process performance
+Investigate equipment failures and implement corrective actions
+Develop preventive maintenance strategies
+Partner with manufacturing and process engineers to drive continuous improvement
+
+Technologies you’ll use
+Automation • Manufacturing Engineering • Preventive Maintenance • Root Cause Analysis • Reliability Engineering • Continuous Improvement
+Why you’ll love this role
+
+Work with advanced manufacturing technology.
+Solve real-world production challenges.
+Improve efficiency through engineering.
+Learn automation and industrial systems.
+Help build products used around the world.
+
+System-on-Chip (SoC) Engineering
+
+Design the brains behind next-generation storage technology.
+As a System-on-Chip (SoC) Engineer, you’ll help develop the intelligent controllers that power advanced storage products. Working at the intersection of hardware, firmware, and silicon, you’ll design, integrate, verify, and validate complex SoC solutions that deliver high performance, reliability, and efficiency.
+
+What you’ll do
+Design, integrate, and validate SoC components and subsystems
+Develop and verify digital logic, interfaces, and IP blocks
+Support simulation, debugging, and hardware bring-up
+Analyze system performance, power, timing, and reliability
+Collaborate with ASIC, firmware, hardware, and systems engineering teams
+
+Technologies you’ll use
+SoC Architecture • RTL • Verilog/SystemVerilog • FPGA • Digital Design • Verification • Embedded Systems • Hardware Validation • Performance Optimization
+Why you’ll love this role
+
+Build the controllers that power modern storage technology.
+Work across silicon, firmware, hardware, and systems engineering.
+Experience the complete chip development lifecycle.
+Solve complex semiconductor design challenges.
+Develop highly marketable SoC engineering skills.
+This role is part of WD's early career development program. WD's early career development program is ideal for individuals at the early stages of their professional career.  Participants receive foundational training through structured onboarding, mentorship, and a curated development curriculum. The responsibilities of this role are typically aligned with candidates who have approximately 0–2+ years of relevant professional experience, though candidates of all experience levels are encouraged to apply.
+Qualifications
+
+Required:
+Currently pursuing or recently completed a Bachelor’s, Master’s, or Ph.D. degree in Computer Science, Computer Engineering, Electrical Engineering, Mechanical Engineering, Systems Engineering, Software Engineering, Manufacturing Engineering, Industrial Engineering, Mechatronics, Materials Engineering, Data Science, or a related engineering or technical discipline.
+Experience developing technical skills through coursework, internships, co-ops, research, laboratory work, capstone projects, hackathons, or personal projects in one or more areas such as software development, embedded systems, firmware, ASIC/SoC design, hardware development, systems engineering, mechanical design, manufacturing, automation, data analysis, testing, validation, or related engineering disciplines.
+Familiarity with engineering fundamentals and one or more relevant technical areas, including programming (C, C++, Python, Java, Go, SQL, JavaScript, or similar), digital logic, embedded systems, computer architecture, electronics, mechanical design, CAD, manufacturing processes, automation, testing, simulation, verification, debugging, data analysis, or systems integration.
+Demonstrated analytical, problem-solving, and communication skills with the ability to collaborate effectively in a cross-functional engineering environment.
+Strong analytical, critical thinking, and problem-solving skills with a passion for learning new technologies.
+Excellent written and verbal communication skills and the ability to collaborate effectively in a team environment.
+Proficiency with Microsoft Office and common software development tools (such as Git, Linux, or IDEs) is a plus.
+Interest in storage technologies, semiconductors, embedded systems, cloud computing, AI, data analytics, or other emerging technologies.
+

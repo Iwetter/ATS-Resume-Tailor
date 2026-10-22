@@ -1,0 +1,21 @@
+Alex Example
+alex@example.com | (404) 555-0100 | https://github.com/example
+EDUCATION
+Example Institute of Technology | Atlanta, GA
+Bachelor of Science in Electrical Engineering | Expected May 2028 | GPA: 3.68
+EXPERIENCE
+Student Hardware Researcher | Example Engineering Lab | Aug 2025 - May 2026
+• Troubleshot power rails and tested hardware using an oscilloscope and multimeter.
+• Developed ESP32 firmware in C++ using I2C to read sensors.
+PROJECTS
+Four-Layer Wearable PCB | Jan 2026 - May 2026
+• Designed and built a four-layer wearable PCB in KiCad with 3.3 V power rails.
+• Tested I2C sensor communication and measured power consumption at 40 mA.
+EEG Circuit Board | Sep 2025 - Dec 2025
+• Designed an EEG PCB in Altium and simulated analog circuits in LTspice.
+FPGA Verification | Feb 2026 - Apr 2026
+• Verified FPGA digital logic using VHDL test benches and simulation.
+DC-DC Converter | Jun 2025 - Jul 2025
+• Built a DC-DC converter and measured PWM output using an oscilloscope.
+SKILLS
+KiCad, Altium, ESP32, C++, I2C, VHDL, FPGA, LTspice
