@@ -68,7 +68,7 @@ ALIASES = {
     "Control systems": ("control systems", "control system", "controls engineering", "feedback control", "control theory", "pid control", "pid"),
     "PLC": ("plc", "plcs", "programmable logic controller", "programmable logic controllers"),
     "Structured Text": ("structured text", "iec 61131-3"), "Ladder logic": ("ladder logic",), "TwinCAT": ("twincat",),
-    "Motor control": ("motor control", "motor controls", "motor drive", "motor drives", "bldc"),
+    "Motor control": ("motor control", "motor controls", "motor drive", "motor drives", "bldc", "fan speed controller", "fan controller", "fan speed control", "servo control", "servo-control", "servo controller", "motor speed control"),
     "Battery management": ("battery management", "bms"), "High voltage": ("high voltage", "high-voltage"),
     "Wire harness": ("harness", "harnesses", "wire harness", "cable harness", "wiring harness"),
     "RF": ("rf", "radio frequency", "microwave"), "Antennas": ("antenna", "antennas"),
@@ -586,7 +586,11 @@ def match_requirement(req: Requirement, resume: Resume) -> Match:
         for term in req.terms or (req.text,):
             hits = []
             for option in satisfied_by(term):
-                found = [x for x in resume.items if x.kind != "section" and has_term(x.text, option) and not negated(x.text)]
+                # A bullet also carries the technologies named in its own project/role heading
+                # ("FPGA Neural Network Accelerator | VHDL, Quartus" -> its bullets show FPGA work).
+                headers = {x.group for x in resume.items if x.kind == "entry" and x.group and has_term(x.text, option)}
+                found = [x for x in resume.items if x.kind != "section" and not negated(x.text)
+                         and (has_term(x.text, option) or (x.kind == "bullet" and x.group in headers))]
                 if found and option != term:
                     via.append(option)
                 hits += found
