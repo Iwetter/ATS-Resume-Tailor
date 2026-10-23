@@ -22,3 +22,12 @@ node_modules/
 *.kicad_prl
 ~*.lck
 work/
+
+# Auto Apply: personal data, evidence and secrets never belong in Git
+data/
+secrets/
+*.secret
+storage_state*.json
+cookies*.json
+applicant_profile*.json
+answer_bank*.json

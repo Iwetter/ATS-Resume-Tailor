@@ -93,14 +93,22 @@ if st.session_state.pop("hunter_navigate", False):
 
 with st.sidebar:
     st.markdown("### Resume Bench")
-    workspace_page = st.radio("Workspace", ["Resume Grader & Tailor", "Internship Hunter"], key="workspace_page")
-    st.caption("LOCAL FIRST · ENGINEERING INTERNSHIPS")
+    workspace_page = st.radio("Workspace", ["Resume Grader & Tailor", "Internship Hunter", "Auto Apply"], key="workspace_page")
+    st.caption("EVIDENCE FIRST · ENGINEERING INTERNSHIPS")
     st.write("1. Verify extraction\n\n2. Analyze evidence\n\n3. Review tailoring\n\n4. Validate & download")
     st.divider()
     st.markdown("**Optional AI rewriting**")
-    enabled = st.toggle("Enable paid OpenAI rewriting", value=False)
-    api_key = st.text_input("OpenAI API key", type="password", disabled=not enabled, help="Kept only in this local session; never read automatically from environment or saved to disk.")
-    model = st.text_input("Model ID", disabled=not enabled, placeholder="A model you have configured for structured outputs")
+    enabled = st.toggle("Enable paid AI rewriting", value=False)
+    provider = st.selectbox("Provider", ["Claude (Anthropic)", "OpenAI"], disabled=not enabled, key="rewrite_provider",
+                            help="Claude uses the official Anthropic SDK with the server's spending limits and cache.")
+    if provider == "OpenAI":
+        api_key = st.text_input("OpenAI API key", type="password", disabled=not enabled, help="Kept only in this local session; never read automatically from environment or saved to disk.")
+        model = st.text_input("Model ID", disabled=not enabled, placeholder="A model you have configured for structured outputs")
+    else:
+        import os
+        api_key = st.text_input("Anthropic API key (blank = server ANTHROPIC_API_KEY)", type="password", disabled=not enabled,
+                                help="Kept only in this session. Leave blank to use the key configured on the server.") or os.environ.get("ANTHROPIC_API_KEY", "")
+        model = st.text_input("Claude model ID", value=os.environ.get("CLAUDE_MODEL", ""), disabled=not enabled, placeholder="e.g. the model in CLAUDE_MODEL")
     output_budget = st.number_input("Maximum output tokens", min_value=256, max_value=3000, value=1800, step=128, disabled=not enabled)
     st.caption("Only Tailor Resume can send selected bullets and relevant requirements. One attempt per unique operation, including failures. No automatic retries.")
     st.divider()
@@ -114,6 +122,10 @@ with st.sidebar:
 if workspace_page == "Internship Hunter":
     from hunter.ui import render
     render()
+    st.stop()
+if workspace_page == "Auto Apply":
+    from autoapply.ui import render as render_auto
+    render_auto()
     st.stop()
 
 st.markdown('<div class="eyebrow">RESUME BENCH / APPLICATION WORKSPACE</div>', unsafe_allow_html=True)
@@ -297,7 +309,22 @@ if st.button("Tailor Resume", type="primary", disabled=not selected_ids or reque
                     rewrite_cache = RewriteCache(Store(st.session_state.hunter_job["db"]))
                 else:
                     rewrite_cache = st.session_state.setdefault("rewrite_cache", {})
-                value = tailor_once(master, job_text, requirements, selected_ids, ModelConfig(model, int(output_budget)), api_key, intentional=True, enabled=True, cache=rewrite_cache)
+                transport = None
+                if provider == "Claude (Anthropic)":
+                    from autoapply import config as aa_config
+                    from autoapply.db import AutoStore
+                    from autoapply.llm import Claude
+                    from hunter.service import DEFAULT_DB
+                    from hunter.storage import Store as HunterStore
+                    usage_store = HunterStore(st.session_state.hunter_job["db"] if st.session_state.get("hunter_job") else st.session_state.get("hunter_db_path", DEFAULT_DB))
+                    claude = Claude(AutoStore(usage_store), aa_config.load(db_path=usage_store.path, claude_enabled=True, anthropic_api_key=api_key, claude_model=model,
+                                                                         claude_max_output_tokens=int(output_budget)))
+                    ready, why = claude.configured()
+                    if not ready:
+                        raise ValueError(why)
+                    transport = claude.rewrite_transport()
+                value = tailor_once(master, job_text, requirements, selected_ids, ModelConfig(model, int(output_budget)), api_key, intentional=True, enabled=True, cache=rewrite_cache,
+                                    **({"transport": transport} if transport else {}))
             st.session_state.proposals = {c.source_ids[0]: c for c in value["changes"]}
             st.session_state.api_usage = {"cached": value["cache_hit"], **value["usage"]}
             st.session_state.tailored = True

@@ -109,9 +109,9 @@ def fetch_board(employer: Employer, client, max_details=60) -> Snapshot:
     rows, all_ids, checks, warnings = [], set(), [], []
     any_cached, complete = False, True
 
-    def get(url):
+    def get(url, force=False):
         nonlocal any_cached
-        data, checked, cached = client.json(url)
+        data, checked, cached = client.json(url, force=True) if force else client.json(url)
         checks.append(checked)
         any_cached = any_cached or cached
         return data, checked
@@ -171,8 +171,15 @@ def fetch_board(employer: Employer, client, max_details=60) -> Snapshot:
                 continue
             details += 1
             url = f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs/{row['id']}" if source == "greenhouse" else f"https://api.smartrecruiters.com/v1/companies/{board}/postings/{row['id']}"
+            # A listing timestamp newer than the cached detail means the
+            # posting changed; refresh that one detail instead of waiting
+            # for the long detail TTL. This is an update, never a new job.
+            stale = False
+            if hasattr(client, "store") and row.get("updated_at"):
+                cached_detail = client.store.cache_get(url)
+                stale = bool(cached_detail and isinstance(cached_detail[0], dict) and cached_detail[0].get("updated_at") != row.get("updated_at"))
             try:
-                detail, job_checked = get(url)
+                detail, job_checked = get(url, force=stale)
                 row = {**row, **detail}
             except SourceError as exc:
                 warnings.append(f"Description unavailable for {row['id']}: {exc}")

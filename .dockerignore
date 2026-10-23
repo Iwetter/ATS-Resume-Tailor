@@ -1,0 +1,15 @@
+.git
+.venv
+venv
+__pycache__
+.pytest_cache
+data
+work
+.env
+.env.*
+!.env.example
+*.sqlite3*
+*.log
+*.pdf
+*.docx
+!tests/fixtures/**

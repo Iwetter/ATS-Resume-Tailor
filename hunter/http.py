@@ -19,14 +19,33 @@ class SourceError(ValueError):
     pass
 
 
+class RateLimited(SourceError):
+    """The source asked us to slow down; the worker backs this board off."""
+    def __init__(self, message, retry_after=None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 def supported_host(host):
     return host in HOSTS or bool(re.fullmatch(
         r"[a-z0-9][a-z0-9-]*\.(?:wd\d+\.myworkdayjobs\.com|recruitee\.com|jobs\.personio\.(?:com|de))", host or ""))
 
 
+DETAIL_PATH = re.compile(r"/v1/boards/[^/]+/jobs/[^/?]+$|/v1/companies/[^/]+/postings/[^/?]+$|/job/")
+
+
 class PublicClient:
-    def __init__(self, store, ttl=3600, interval=.5, session=None, sleep=time.sleep):
+    """``ttl`` applies to listings/feeds; ``detail_ttl`` to per-job detail pages.
+
+    Frequent (10–15 minute) worker scans pass a short listing TTL so each scan
+    sees fresh membership, while unchanged job details are not re-downloaded
+    on every scan. ``source_ttls`` optionally overrides the listing TTL per
+    host suffix (for example a slower cadence for large Workday sitemaps).
+    """
+    def __init__(self, store, ttl=3600, interval=.5, session=None, sleep=time.sleep, detail_ttl=None, source_ttls=None):
         self.store, self.ttl, self.interval = store, ttl, interval
+        self.detail_ttl = ttl if detail_ttl is None else detail_ttl
+        self.source_ttls = dict(source_ttls or {})
         self.session = session or requests.Session()
         self.sleep = sleep
         self.last_request, self.robots = {}, {}
@@ -82,11 +101,21 @@ class PublicClient:
                 raise SourceError("Source requests a long crawl delay; use its career page manually.")
             self.interval = max(self.interval, float(crawl_delay))
 
+    def ttl_for(self, url):
+        parts = urlsplit(url)
+        if DETAIL_PATH.search(parts.path):
+            return self.detail_ttl
+        host = parts.hostname or ""
+        for suffix, ttl in self.source_ttls.items():
+            if host == suffix or host.endswith("." + suffix.lstrip(".")):
+                return ttl
+        return self.ttl
+
     def _read(self, url, force=False, as_text=False):
         self.allowed(url)
         cache_key = "text:" + url if as_text else url
         cached = self.store.cache_get(cache_key)
-        if not force and cached and (datetime.now(timezone.utc)-datetime.fromisoformat(cached[1])).total_seconds() < self.ttl:
+        if not force and cached and (datetime.now(timezone.utc)-datetime.fromisoformat(cached[1])).total_seconds() < self.ttl_for(url):
             self.cache_hits += 1
             return cached[0], cached[1], True
         for attempt in range(2):
@@ -102,11 +131,13 @@ class PublicClient:
                 try:
                     delay = float(retry)
                 except ValueError:
-                    raise SourceError(f"Source rate-limited requests (HTTP {status}); try a later scan.")
+                    raise RateLimited(f"Source rate-limited requests (HTTP {status}); try a later scan.")
                 if delay > 5:
-                    raise SourceError(f"Source requested a {delay:g}s retry delay; try a later scan.")
+                    raise RateLimited(f"Source requested a {delay:g}s retry delay; try a later scan.", delay)
                 self.sleep(max(1, delay))
                 continue
+            if status == 429:
+                raise RateLimited("Source rate-limited requests (HTTP 429) after one bounded retry.")
             if status != 200:
                 raise SourceError(f"Public API returned HTTP {status}; no closed status inferred from this failure.")
             if as_text:

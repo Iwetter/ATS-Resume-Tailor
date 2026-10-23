@@ -1,5 +1,7 @@
 # Daily local Internship Hunter scan
 
+> For continuous 10–15 minute scanning on a persistent machine or cloud VM, use the Auto Apply worker (`python -m autoapply.worker` or `docker compose up -d`) described in [AUTOAPPLY.md](AUTOAPPLY.md). The daily Windows task below still works and shares the same database.
+
 The app has no cloud scheduler. A scheduled scan runs only when this Windows computer is powered on and Windows can execute the task. It cannot run while the computer is shut down. No scheduled task was installed automatically during this build.
 
 ## Manual CLI

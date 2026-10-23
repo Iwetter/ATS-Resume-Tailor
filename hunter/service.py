@@ -5,6 +5,7 @@ from collections.abc import MutableMapping
 from dataclasses import asdict, replace
 from datetime import datetime, timezone, timedelta
 import json
+import os
 from pathlib import Path
 import re
 
@@ -13,12 +14,13 @@ from ats.models import Change, Extracted, digest
 from ats.scoring import analyze
 
 from .filtering import decide, us_location
-from .http import PublicClient, SourceError
+from .http import PublicClient, RateLimited, SourceError
 from .models import Employer, Filters, Job, Profile, utcnow
 from .sources import fetch_board
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DB = ROOT / "data" / "hunter.sqlite3"
+# HUNTER_DB lets a container keep the database on a persistent volume.
+DEFAULT_DB = Path(os.environ.get("HUNTER_DB") or ROOT / "data" / "hunter.sqlite3")
 WATCHLIST = ROOT / "hunter" / "employers.json"
 SCORING_VERSION = "hunter-1"
 
@@ -96,7 +98,12 @@ def score_job(job: Job, master, store=None):
     return result
 
 
-def scan(store, employers=None, master=None, profile=None, filters=None, client=None, progress=None):
+def scan(store, employers=None, master=None, profile=None, filters=None, client=None, progress=None, lease=timedelta(hours=2), on_job=None):
+    """``lease`` bounds how long a crashed scan can block the next one.
+
+    ``on_job(key, job, fresh)`` is called after each job is persisted so the
+    always-on worker can evaluate new/changed relevant jobs immediately.
+    """
     profile, filters = profile_from_master(profile or Profile(), master), filters or Filters()
     employers = employers if employers is not None else store.employers(WATCHLIST)
     started = utcnow()
@@ -105,8 +112,8 @@ def scan(store, employers=None, master=None, profile=None, filters=None, client=
         db.execute("BEGIN IMMEDIATE")
         row = db.execute("SELECT value FROM kv WHERE key='scan_lock'").fetchone()
         lock = json.loads(row[0]) if row else None
-        if lock and datetime.fromisoformat(lock) > datetime.now(timezone.utc)-timedelta(hours=2):
-            raise ValueError("Another scan is already running. Its lease expires after two hours if interrupted.")
+        if lock and datetime.fromisoformat(lock) > datetime.now(timezone.utc)-lease:
+            raise ValueError(f"Another scan is already running. Its lease expires after {int(lease.total_seconds()//60)} minutes if interrupted.")
         db.execute("INSERT OR REPLACE INTO kv VALUES ('scan_lock',?)", (json.dumps(started),))
         scan_id = db.execute("INSERT INTO scans(started) VALUES (?)", (started,)).lastrowid
     client = client or PublicClient(store)
@@ -129,11 +136,13 @@ def scan(store, employers=None, master=None, profile=None, filters=None, client=
                     if decision.eligible and master is not None and job.description:
                         if score_job(job, master, store):
                             result["scored"] += 1
+                    if on_job:
+                        on_job(key, job, fresh)
                 if snapshot.complete:
                     store.close_absent(employer, snapshot.all_ids, snapshot.checked_at)
                 result["boards"].append({"employer": employer.name, "source": employer.source, "board": employer.board, "success": True, "total_public_jobs": len(snapshot.all_ids), "engineering_internships": len(snapshot.jobs), "new": new, "checked_at": snapshot.checked_at, "cached": snapshot.cached, "complete": snapshot.complete, "warnings": list(snapshot.warnings)})
             except (SourceError, KeyError, TypeError, ValueError) as exc:
-                result["boards"].append({"employer": employer.name, "source": employer.source, "board": employer.board, "success": False, "error": str(exc)})
+                result["boards"].append({"employer": employer.name, "source": employer.source, "board": employer.board, "success": False, "error": str(exc), "rate_limited": isinstance(exc, RateLimited), "retry_after": getattr(exc, "retry_after", None)})
         result["finished"] = utcnow()
         result["http_requests"] = getattr(client, "requests", None)
         result["http_cache_hits"] = getattr(client, "cache_hits", None)

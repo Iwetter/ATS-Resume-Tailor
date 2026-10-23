@@ -1,0 +1,46 @@
+# Persistent cloud VM deployment.
+#   cp .env.example .env   # edit; never commit .env
+#   docker compose up -d --build
+# Dashboard is bound to the VM's loopback only. Reach it with an SSH tunnel:
+#   ssh -L 8501:127.0.0.1:8501 you@your-vm   then open http://localhost:8501
+x-app: &app
+  build: .
+  image: ats-resume-tailor:latest
+  env_file: .env
+  environment:
+    HUNTER_DB: /app/data/hunter.sqlite3
+  volumes:
+    - appdata:/app/data
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: "20m", max-file: "5"}
+
+services:
+  worker:
+    <<: *app
+    command: ["python", "-m", "autoapply.worker"]
+    shm_size: "1gb"          # Chromium needs more than Docker's 64 MB default
+    stop_grace_period: 120s  # finish the current step on SIGTERM
+    healthcheck:
+      test: ["CMD", "python", "-m", "autoapply.health"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 180s
+
+  dashboard:
+    <<: *app
+    command: ["streamlit", "run", "app.py", "--server.address", "0.0.0.0", "--server.port", "8501",
+              "--server.headless", "true", "--browser.gatherUsageStats", "false"]
+    ports:
+      - "127.0.0.1:8501:8501"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=5).status == 200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  appdata:

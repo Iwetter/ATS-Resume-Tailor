@@ -14,6 +14,32 @@ from .models import Employer, Job, Profile, canonical_url, utcnow
 STATUSES = ("New", "Saved", "Applied", "Interview", "Rejected", "Withdrawn")
 
 
+# Only these bases state when a posting was first published. Ashby's
+# publishedAt can be a republication; Lever/Personio expose no publication
+# date; imports are user-reported.
+VERIFIED_PUBLICATION = ("Greenhouse first_published", "SmartRecruiters releasedDate", "Workday public JobPosting datePosted", "Recruitee explicit published_at")
+TRACKED_FIELDS = ("title", "location", "description", "updated_at", "expires_at", "compensation", "employment_type")
+
+
+def verified_publication(job: Job) -> bool:
+    return not job.imported_at and job.publication_basis in VERIFIED_PUBLICATION
+
+
+def _change_events(old: Job, new: Job, availability) -> list[tuple[str, dict]]:
+    """Classify a re-observed job. An update is never a new publication."""
+    if (old.source, old.board, old.source_id) != (new.source, new.board, new.source_id):
+        return []
+    events = []
+    changed = [f for f in TRACKED_FIELDS if getattr(old, f) != getattr(new, f) and not (f == "description" and not new.description)]
+    if changed:
+        events.append(("updated", {"fields": changed, "updated_at": new.updated_at}))
+    if old.published_at and new.published_at and old.published_at != new.published_at:
+        events.append(("republished", {"previous_published_at": old.published_at, "published_at": new.published_at, "publication_basis": new.publication_basis}))
+    if availability == "closed" and new.source_status == "open":
+        events.append(("reopened", {}))
+    return events
+
+
 class Store:
     def __init__(self, path):
         self.path = Path(path)
@@ -37,12 +63,24 @@ class Store:
             CREATE TABLE IF NOT EXISTS actions (id INTEGER PRIMARY KEY,job_key TEXT,at TEXT,action TEXT,details TEXT);
             CREATE TABLE IF NOT EXISTS artifacts (key TEXT PRIMARY KEY,job_key TEXT,created TEXT,pdf TEXT,docx TEXT,audit TEXT,metadata TEXT);
             CREATE TABLE IF NOT EXISTS imports (job_key TEXT,origin_url TEXT,imported_at TEXT,metadata TEXT,PRIMARY KEY(job_key,origin_url));
+            CREATE TABLE IF NOT EXISTS job_events (id INTEGER PRIMARY KEY, job_key TEXT NOT NULL, at TEXT NOT NULL, event TEXT NOT NULL, details TEXT NOT NULL DEFAULT '{}');
+            CREATE INDEX IF NOT EXISTS job_events_key ON job_events(job_key, id);
             ''')
+            # Additive, idempotent migration: existing databases keep every
+            # row; new columns start NULL and are filled as jobs are observed.
+            columns = {row[1] for row in db.execute("PRAGMA table_info(jobs)")}
+            for name in ("first_published_at", "publication_verified", "last_changed_at"):
+                if name not in columns:
+                    db.execute(f"ALTER TABLE jobs ADD COLUMN {name} TEXT")
+            if db.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
+                # The dashboard and the always-on worker share this database.
+                db.execute("PRAGMA journal_mode=WAL")
 
     @contextmanager
     def connect(self):
-        db = sqlite3.connect(self.path, timeout=20)
+        db = sqlite3.connect(self.path, timeout=30)
         db.row_factory = sqlite3.Row
+        db.execute("PRAGMA busy_timeout=30000")
         try:
             yield db
             db.commit()
@@ -121,8 +159,10 @@ class Store:
                 if secondary and (secondary["source"], secondary["board"]) != (job.source, job.board):
                     existing = secondary
             key = existing["key"] if existing else job.key
+            events = []
             if existing:
                 old = Job(**json.loads(existing["payload"]))
+                events = _change_events(old, job, existing["availability"])
                 if not job.description and old.description:
                     from dataclasses import replace
                     job = replace(job, description=old.description, published_at=job.published_at or old.published_at, publication_basis=job.publication_basis if job.published_at else old.publication_basis)
@@ -137,6 +177,15 @@ class Store:
                     db.execute("UPDATE jobs SET availability='open',checked_at=? WHERE key=?", (job.checked_at, key))
             else:
                 db.execute("INSERT INTO jobs(key,source,board,source_id,canonical_url,secondary_key,payload,discovered_at,checked_at,availability) VALUES (?,?,?,?,?,?,?,?,?,?)", (key, job.source, job.board, job.source_id, url, job.secondary_key, json.dumps(asdict(job)), discovered_at, job.checked_at, job.source_status))
+                events = [("discovered", {"published_at": job.published_at, "publication_basis": job.publication_basis, "source": job.source})]
+            # Verified first publication is recorded once and never moved by a
+            # later update, republication or rediscovery.
+            if job.published_at and verified_publication(job):
+                db.execute("UPDATE jobs SET first_published_at=?,publication_verified='1' WHERE key=? AND first_published_at IS NULL", (job.published_at, key))
+            if any(name in {"updated", "republished"} for name, _ in events):
+                db.execute("UPDATE jobs SET last_changed_at=? WHERE key=?", (job.checked_at or discovered_at, key))
+            for name, details in events:
+                db.execute("INSERT INTO job_events(job_key,at,event,details) VALUES (?,?,?,?)", (key, job.checked_at or discovered_at, name, json.dumps(details, ensure_ascii=False)))
             db.execute("INSERT OR REPLACE INTO aliases VALUES (?,?,?,?)", (job.source, job.board, job.source_id, key))
             db.execute("INSERT OR REPLACE INTO observations VALUES (?,?,?,?,?)", (job.source, job.board, job.source_id, job.source_status, job.checked_at))
         return key, existing is None
@@ -181,7 +230,10 @@ class Store:
                 states = [x[0] for x in db.execute("SELECT o.status FROM observations o JOIN aliases a USING(source,board,source_id) WHERE a.job_key=?", (row["key"],))]
                 availability = "open" if "open" in states else "unknown" if "unknown" in states else "closed"
                 if availability != "open":
+                    previous = db.execute("SELECT availability FROM jobs WHERE key=?", (row["key"],)).fetchone()
                     db.execute("UPDATE jobs SET availability=?,checked_at=? WHERE key=?", (availability, checked_at, row["key"]))
+                    if previous and previous[0] != availability:
+                        db.execute("INSERT INTO job_events(job_key,at,event,details) VALUES (?,?,?,?)", (row["key"], checked_at, availability, json.dumps({"source": employer.source, "board": employer.board})))
 
     def jobs(self):
         with self.connect() as db:
@@ -218,3 +270,8 @@ class Store:
     def artifacts(self):
         with self.connect() as db:
             return [dict(x) for x in db.execute("SELECT * FROM artifacts ORDER BY created DESC")]
+
+    def events(self, key=None, limit=500):
+        with self.connect() as db:
+            rows = db.execute("SELECT * FROM job_events" + (" WHERE job_key=?" if key else "") + " ORDER BY id DESC LIMIT ?", ((key, limit) if key else (limit,))).fetchall()
+        return [{**dict(r), "details": json.loads(r["details"])} for r in rows]
