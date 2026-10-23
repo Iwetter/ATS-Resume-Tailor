@@ -13,9 +13,10 @@ from dataclasses import asdict
 import json
 import logging
 
+from ats.docx_tailor import export_tailored
 from ats.exporting import ExportError, export_resume
 from ats.matching import extract_requirements, rank_bullets, rank_projects, select_projects
-from ats.models import Change, digest
+from ats.models import Change, ExportBundle, digest
 from ats.rewriting import ModelConfig, apply_changes, tailor_once, validate_change
 from hunter.service import RewriteCache, order_skills, score_job
 
@@ -55,11 +56,31 @@ def tailor_for_job(store, job_key, job, master, settings, claude=None, approved_
         reviewed_proposals.append({**asdict(change), "validation": verdict.status, "reasons": list(verdict.reasons)})
     approved = {c["source_ids"][0] for c in reviewed_proposals if c["validation"] == "review" and (c["source_ids"][0] in set(approved_change_ids) or settings.auto_accept_validated_rewrites)}
     bundle, final, attempt_projects = None, None, list(chosen)
+    original = store.master_original() if hasattr(store, "master_original") else None
+    own_docx = original[0] if original and original[1].lower().endswith(".docx") else None
+    export_method, export_issues = "standard template", []
     while True:
         draft = order_skills(select_projects(master, attempt_projects), requirements)
         final = apply_changes(master, draft, tuple(proposals), approved)
+        if own_docx:
+            # The saved master DOCX is the source of truth: edit it, render it, check it.
+            result = export_tailored(own_docx, master, final)
+            if result["pdf"] and result["pages"] > 1 and len(attempt_projects) > 1:
+                notes.append(f"Dropped lowest-ranked project to fit one page: {attempt_projects[-1]}")
+                attempt_projects = attempt_projects[:-1]
+                continue
+            export_method, export_issues = "your master DOCX via " + result["converter"], list(result["issues"])
+            if result["pdf"]:
+                bundle = ExportBundle(result["pdf"], result["docx"], result["pages"], final.text, 0.0)
+            else:
+                preview = export_resume(final)
+                bundle = ExportBundle(preview.pdf, result["docx"], preview.pages, final.text, preview.font_size)
+                export_issues.append("The attached PDF uses the standard template because your DOCX could not be rendered.")
+            break
         try:
             bundle = export_resume(final)
+            if original:  # a PDF master: its own layout cannot be reproduced
+                export_issues.append("Your master is a PDF, so the standard template was used; upload a DOCX master to keep your formatting.")
             break
         except ExportError as exc:
             if len(attempt_projects) <= 1 or "page" not in str(exc).lower():
@@ -80,4 +101,5 @@ def tailor_for_job(store, job_key, job, master, settings, claude=None, approved_
     return {"artifact_key": artifact_key, "pdf": artifact["pdf"], "docx": artifact["docx"], "projects": attempt_projects,
             "selection_basis": selection_basis, "omitted_projects": omitted, "proposals": reviewed_proposals,
             "approved_change_ids": sorted(approved), "fit_before": metadata["original_fit_estimate"],
-            "fit_after": metadata["tailored_fit_estimate"], "notes": notes, "resume_hash": digest(bundle.pdf)}
+            "fit_after": metadata["tailored_fit_estimate"], "notes": notes, "resume_hash": digest(bundle.pdf),
+            "export_method": export_method, "export_issues": export_issues}

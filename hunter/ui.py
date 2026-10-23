@@ -322,4 +322,7 @@ def render():
         st.session_state.source_hash = master.source_hash
         st.session_state.demo = False
         st.session_state.pop("original_bytes", None)
+        original = store.master_original()
+        if original:  # the saved master DOCX stays the source of truth for formatting
+            st.session_state.original_bytes, st.session_state.original_name = original
         open_workspace({"key": selected, "description": job.description, "company": job.company, "title": job.title, "url": job.url, "db": str(store.path), "source_hash": master.source_hash})

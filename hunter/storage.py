@@ -133,6 +133,18 @@ class Store:
         self.set("active_master", key)
         return key
 
+    def master_original(self):
+        """(bytes, filename) of the uploaded file behind the active master, or None."""
+        key = self.get("active_master")
+        value = self.get("master:" + key) if key else None
+        if not value:
+            return None
+        for suffix in (".docx", ".pdf"):
+            path = self.path.parent / "masters" / (key + suffix)
+            if path.is_file():
+                return path.read_bytes(), value.get("filename") or ("master" + suffix)
+        return None
+
     def master(self):
         key = self.get("active_master")
         value = self.get("master:" + key) if key else None

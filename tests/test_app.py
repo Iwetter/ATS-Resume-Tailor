@@ -35,7 +35,7 @@ def test_streamlit_local_workflow_and_stale_export(monkeypatch):
     original_text = app.session_state["master"].text
     button(app, "Tailor Resume").click().run()
     assert not app.exception
-    assert any("No AI rewriting occurred" in x.value for x in app.info)
+    assert any("no AI rewriting happened" in x.value for x in app.info)
     edits = [x for x in app.text_area if x.label == "Proposed bullet"]
     pcb = next(x for x in edits if "four-layer" in x.value)
     revised = "Designed and built a four-layer wearable PCB with 3.3 V power rails in KiCad."

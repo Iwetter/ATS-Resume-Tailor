@@ -51,6 +51,19 @@ def estimate_tokens(text: str) -> int:
     return len(text) // 3 + 50
 
 
+def claude_status(enabled, api_key, model, input_price, output_price) -> tuple[bool, str]:
+    """Plain-language reason Claude rewriting can or cannot run, for the UI."""
+    if not enabled:
+        return False, "AI rewriting is off. Turn it on above to let Claude reword bullets; until then nothing is sent and wording stays original."
+    if not (api_key or "").strip():
+        return False, "No Anthropic API key. Paste one above or set ANTHROPIC_API_KEY. (A Claude Pro subscription does not include API access; the API is billed separately.)"
+    if not (model or "").strip():
+        return False, "No model ID. Enter a Claude model, e.g. the one in CLAUDE_MODEL."
+    if not input_price or not output_price:
+        return False, "Enter this model's input and output prices per million tokens (from your Anthropic console) so spending limits can be enforced."
+    return True, f"ready ({model}); each Tailor click is one cached, budgeted request."
+
+
 class Claude:
     """Budgeted, cached Claude calls. ``client`` is injectable for tests."""
 

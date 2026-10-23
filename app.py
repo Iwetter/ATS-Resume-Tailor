@@ -109,7 +109,15 @@ with st.sidebar:
         api_key = st.text_input("Anthropic API key (blank = server ANTHROPIC_API_KEY)", type="password", disabled=not enabled,
                                 help="Kept only in this session. Leave blank to use the key configured on the server.") or os.environ.get("ANTHROPIC_API_KEY", "")
         model = st.text_input("Claude model ID", value=os.environ.get("CLAUDE_MODEL", ""), disabled=not enabled, placeholder="e.g. the model in CLAUDE_MODEL")
+        p1, p2 = st.columns(2)
+        price_in = p1.number_input("Input $/M tokens", 0.0, 200.0, float(os.environ.get("CLAUDE_INPUT_USD_PER_MTOK") or 0), 0.25, disabled=not enabled,
+                                   help="Copy the current price for this model from your Anthropic console. Needed so the daily/monthly spend limits can be enforced.")
+        price_out = p2.number_input("Output $/M tokens", 0.0, 400.0, float(os.environ.get("CLAUDE_OUTPUT_USD_PER_MTOK") or 0), 0.25, disabled=not enabled)
     output_budget = st.number_input("Maximum output tokens", min_value=256, max_value=3000, value=1800, step=128, disabled=not enabled)
+    if provider != "OpenAI":
+        from autoapply.llm import claude_status
+        ready_ai, why_ai = claude_status(enabled, api_key, model, price_in, price_out)
+        (st.success if ready_ai else st.warning)("Claude: " + why_ai)
     st.caption("Only Tailor Resume can send selected bullets and relevant requirements. One attempt per unique operation, including failures. No automatic retries.")
     st.divider()
     with st.expander("Alignment weights"):
@@ -318,7 +326,8 @@ if st.button("Tailor Resume", type="primary", disabled=not selected_ids or reque
                     from hunter.storage import Store as HunterStore
                     usage_store = HunterStore(st.session_state.hunter_job["db"] if st.session_state.get("hunter_job") else st.session_state.get("hunter_db_path", DEFAULT_DB))
                     claude = Claude(AutoStore(usage_store), aa_config.load(db_path=usage_store.path, claude_enabled=True, anthropic_api_key=api_key, claude_model=model,
-                                                                         claude_max_output_tokens=int(output_budget)))
+                                                                         claude_max_output_tokens=int(output_budget), claude_input_usd_per_mtok=price_in or None,
+                                                                         claude_output_usd_per_mtok=price_out or None))
                     ready, why = claude.configured()
                     if not ready:
                         raise ValueError(why)
@@ -338,7 +347,10 @@ if not st.session_state.get("tailored"):
     st.info("Click Tailor Resume to open the review editor. With AI disabled, selection and manual editing run locally.")
     st.stop()
 if not enabled:
-    st.info("Local mode: projects have been ranked and selected. No AI rewriting occurred. Edit bullets below or import the JSON returned from your compact request.")
+    st.info("Local mode: projects were ranked and selected and skills reordered, but no AI rewriting happened, so bullets keep their original wording. "
+            "Turn on AI rewriting in the sidebar (Anthropic API key, model and prices) for real rewording, or edit bullets below.")
+elif not st.session_state.get("proposals"):
+    st.warning("No AI rewrite was applied: the request failed or proposed nothing. The draft below is NOT Claude-tailored.")
 if st.session_state.get("api_usage"):
     st.caption("API usage: " + json.dumps(st.session_state.api_usage))
 with st.expander("Import proposed changes from Codex"):
@@ -391,6 +403,48 @@ with st.expander("Review final draft and evidence"):
 
 st.subheader("05  Validate & download")
 bundle_hash = digest([analysis_hash, [asdict(x) for x in reviewed.items]])
+own_original = st.session_state.get("original_bytes")
+own_docx = bool(own_original) and st.session_state.get("original_name", "").lower().endswith(".docx")
+export_mode = st.radio("Output", ["Edit my original DOCX (keeps its formatting)", "Standard ATS template"], index=0 if own_docx else 1, horizontal=True,
+                       disabled=not own_docx, key="export_mode",
+                       help="Your uploaded DOCX is the source of truth: wording changes go into its existing paragraphs and runs; margins, fonts, styles and spacing are untouched. Upload a DOCX master to enable it.")
+if own_docx and export_mode.startswith("Edit my original"):
+    from ats.docx_tailor import docx_to_pdf, export_tailored
+    if st.button("Generate tailored DOCX & PDF from my original", type="primary"):
+        with st.spinner("Editing your DOCX and rendering it with Word/LibreOffice…"):
+            st.session_state.own_bundle = export_tailored(own_original, master, reviewed)
+            st.session_state.own_bundle_hash = bundle_hash
+            if "own_original_pdf" not in st.session_state:
+                st.session_state.own_original_pdf = docx_to_pdf(own_original)[0]
+    own = st.session_state.get("own_bundle") if st.session_state.get("own_bundle_hash") == bundle_hash else None
+    if own:
+        report = own["report"]
+        (st.success if own["ok"] else st.warning)(
+            f"{len(report['edited'])} line(s) reworded, {len(report['removed'])} removed, {len(report['moved'])} project(s) reordered in your document · "
+            + (f"{own['pages']} page(s) rendered by {own['converter']}" if own["pdf"] else "PDF not rendered"))
+        for issue in own["issues"]:
+            st.error(issue)
+        if report["unmapped"]:
+            st.caption(f"{len(report['unmapped'])} of {report['items']} resume lines could not be matched to a DOCX paragraph; they were left exactly as in your file.")
+        c1, c2 = st.columns(2)
+        c1.download_button("Download tailored DOCX (your formatting)", own["docx"], "tailored-resume.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        if own["pdf"]:
+            c2.download_button("Download tailored PDF", own["pdf"], "tailored-resume.pdf", "application/pdf")
+            import pymupdf
+            left, right = st.columns(2)
+            for column, label, data in ((left, "Original", st.session_state.get("own_original_pdf")), (right, "Tailored", own["pdf"])):
+                if data:
+                    with pymupdf.open(stream=data, filetype="pdf") as pdf:
+                        column.image(pdf[0].get_pixmap(matrix=pymupdf.Matrix(1.2, 1.2)).tobytes("png"), caption=label)
+        changed = [(master.by_id[i].text, reviewed.by_id[i].text) for i in report["edited"]]
+        if changed:
+            with st.expander("Exact wording changes", expanded=True):
+                for before_text, after_text in changed:
+                    old_html, new_html = diffs(before_text, after_text)
+                    a, b = st.columns(2)
+                    a.markdown(f'<div class="diff">{old_html}</div>', unsafe_allow_html=True)
+                    b.markdown(f'<div class="diff">{new_html}</div>', unsafe_allow_html=True)
+    st.stop()
 if st.button("Generate validated PDF & DOCX", type="primary"):
     st.session_state.pop("bundle", None)
     try:

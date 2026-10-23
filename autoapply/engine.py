@@ -277,6 +277,8 @@ class Engine:
                     reasons.append("Not every hard gate passed; approval required.")
                 if not self.auto_active():
                     reasons.append("AUTO mode is not active for the current verified profile.")
+                if (app["plan"] or {}).get("export_issues"):
+                    reasons.append("Tailored resume needs your review before automatic use: " + "; ".join(app["plan"]["export_issues"])[:300])
                 untrusted = [r for r in report.resolutions if r.source == "model_mapping"] if not self.settings.trust_model_mappings else []
                 if untrusted:
                     reasons.append("Some answers were mapped by Claude and need your review: " + "; ".join(r.label[:60] for r in untrusted))

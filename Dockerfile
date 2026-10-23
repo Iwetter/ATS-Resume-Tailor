@@ -10,9 +10,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# DejaVu fonts are what ats/exporting.py uses for PDF rendering on Linux.
+# DejaVu fonts: ats/exporting.py PDFs. LibreOffice Writer + metric-compatible fonts (Liberation, Carlito):
+# renders your own master DOCX to PDF (ats/docx_tailor.py); Word does this on Windows.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends fonts-dejavu-core tini \
+ && apt-get install -y --no-install-recommends fonts-dejavu-core tini libreoffice-writer-nogui fonts-liberation fonts-crosextra-carlito \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

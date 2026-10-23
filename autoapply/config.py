@@ -55,7 +55,7 @@ class Settings:
     max_per_company_per_day: int = 1
     max_per_company_total: int = 3
     min_fit_review: float = 45.0
-    min_fit_auto: float = 60.0
+    min_fit_auto: float = 80.0
     trust_model_mappings: bool = False
     auto_accept_validated_rewrites: bool = False
     headless: bool = True
@@ -128,7 +128,7 @@ def load(**overrides) -> Settings:
         max_per_company_per_day=_int("AUTOAPPLY_MAX_PER_COMPANY_PER_DAY", 1, 0, 10),
         max_per_company_total=_int("AUTOAPPLY_MAX_PER_COMPANY_TOTAL", 3, 0, 50),
         min_fit_review=float(_float("AUTOAPPLY_MIN_FIT_REVIEW", 45.0)),
-        min_fit_auto=float(_float("AUTOAPPLY_MIN_FIT_AUTO", 60.0)),
+        min_fit_auto=float(_float("AUTOAPPLY_MIN_FIT_AUTO", 80.0)),
         trust_model_mappings=_bool("AUTOAPPLY_TRUST_MODEL_MAPPINGS"),
         auto_accept_validated_rewrites=_bool("AUTOAPPLY_AUTO_ACCEPT_VALIDATED_REWRITES"),
         headless=_bool("BROWSER_HEADLESS", True),

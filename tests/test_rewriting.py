@@ -64,7 +64,10 @@ def test_bounded_rewrite_request_excludes_application_history(master, job_text):
     request = rewrite_request(master, extract_requirements(job_text), [source.id])
     body = json.dumps(request)
     assert len(body) < 18000 and "alex@example.com" not in body
-    assert request["data"]["evidence"] == [{"id": source.id, "text": source.text}]
+    evidence = request["data"]["evidence"]
+    assert [(e["id"], e["text"]) for e in evidence] == [(source.id, source.text)]
+    # Same-entry context lets the model use the project's verified facts, never contact details.
+    assert evidence[0]["same_entry_context"] and all("@" not in c for c in evidence[0]["same_entry_context"])
     assert "source_ids" in request["response_schema"]["properties"]["changes"]["items"]["properties"]
 
 
