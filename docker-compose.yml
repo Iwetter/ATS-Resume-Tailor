@@ -1,8 +1,11 @@
 # Persistent cloud VM deployment.
 #   cp .env.example .env   # edit; never commit .env
-#   docker compose up -d --build
+#   docker compose up -d --build                    # worker + private dashboard
+#   docker compose --profile phone up -d --build    # + SMS/phone gateway behind HTTPS (Caddy)
 # Dashboard is bound to the VM's loopback only. Reach it with an SSH tunnel:
 #   ssh -L 8501:127.0.0.1:8501 you@your-vm   then open http://localhost:8501
+# The phone profile publishes ports 80/443 to Caddy, which forwards only the
+# gateway's webhook, sign-in and review paths. The dashboard is never exposed.
 x-app: &app
   build: .
   image: ats-resume-tailor:latest
@@ -42,5 +45,41 @@ services:
       retries: 3
       start_period: 60s
 
+  gateway:
+    <<: *app
+    profiles: ["phone"]
+    command: ["python", "-m", "autoapply.gateway"]
+    environment:
+      HUNTER_DB: /app/data/hunter.sqlite3
+      GATEWAY_HOST: 0.0.0.0           # reachable only on the compose network (no published port)
+      GATEWAY_PORT: "8080"
+      GATEWAY_TRUSTED_PROXY: "*"      # client IPs for login throttling come from Caddy's X-Forwarded-For
+    expose: ["8080"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5).status == 200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  caddy:
+    profiles: ["phone"]
+    image: caddy:2.10
+    restart: unless-stopped
+    env_file: .env                    # PUBLIC_HOSTNAME
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data              # certificates survive restarts
+      - caddy_config:/config
+    depends_on:
+      gateway:
+        condition: service_healthy
+
 volumes:
   appdata:
+  caddy_data:
+  caddy_config:

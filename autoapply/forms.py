@@ -74,13 +74,17 @@ CONCEPTS = (
     ("github", r"\bgithub\b"),
     ("website", r"\b(website|portfolio|personal site)\b"),
     ("gpa", r"\bgpa\b|grade point"),
-    ("graduation_date", r"\b(graduation|grad) (date|month)\b|when (do|will) you graduate|expected graduation"),
-    ("graduation_year", r"\b(graduation|grad) year\b"),
+    # Greenhouse's education block labels the degree's dates "Start/End date month/year".
+    ("education_start", r"^start date (month|year)\b"),
+    ("graduation_month", r"^end date month\b|\b(graduation|grad) month\b"),
+    ("graduation_year", r"^end date year\b|\b(graduation|grad) year\b"),
+    ("graduation_date", r"\b(graduation|grad) date\b|when (do|will) you graduate|expected graduation"),
     ("school", r"\b(school|university|college|institution)\b"),
     ("degree", r"^degree\b|\bdegree (type|level|program)\b|highest (level of )?education"),
     ("major", r"\b(major|discipline|field of study|area of study)\b"),
     ("earliest_start", r"\b(earliest )?start date\b|when can you start|available to start"),
     ("location", r"^(current )?(location|city)\b|where are you (currently )?(located|based)"),
+    ("country", r"^country\b"),
 )
 BOOLEAN_CONCEPTS = {"sponsorship_needed", "work_authorized", "us_citizen", "willing_to_relocate"}
 # Questions whose phrasing inverts yes/no, which we refuse to guess about.
@@ -188,6 +192,11 @@ def resolve(fields, profile: ApplicantProfile, answers, *, resume_path=None, cov
                         concept = mapping["key"]
             if value is not None:
                 res.value = _coerce(f, value, concept)
+                answer = bank.get(label) or next((a for p, a in bank_patterns if p.search(f.label)), None)
+                if res.value is None and res.source == "profile" and answer:
+                    # e.g. profile "Bachelor of Science" vs an employer list that says "Bachelor's Degree":
+                    # your verified answer for this exact question wins.
+                    res.value, res.source = _coerce(f, answer["answer"], concept), "answer_bank"
                 if res.value is None:
                     res.source, res.reason = "unresolved", "Verified value does not match any allowed option."
             elif not res.reason:
@@ -230,6 +239,10 @@ def boolean_answer(concept, label, profile):
 
 
 def _coerce(f, value, concept):
+    if f.kind == "combobox" and not f.options:
+        # Searchable list (city, school…): options appear only after typing. The
+        # verified text is typed and must match a real option exactly at fill time.
+        return ("Yes" if value else "No") if isinstance(value, bool) else str(value)
     if f.kind in ("select", "radio", "combobox"):
         if isinstance(value, bool):
             matches = [o for o in f.options if _yes_no(o) is value]

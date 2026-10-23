@@ -42,11 +42,16 @@ VERSION = "autoapply-1"
 
 
 class Worker:
-    def __init__(self, settings=None, store=None, engine=None, client_factory=None, sleep=time.sleep):
+    def __init__(self, settings=None, store=None, engine=None, client_factory=None, sleep=time.sleep, notifier=None):
         self.settings = settings or config.load()
         self.store = store or Store(self.settings.db_path)
         self.engine = engine or Engine(self.store, self.settings)
         self.auto = self.engine.auto
+        if notifier is None:
+            from .notify import Notifier
+            from .sms import SmsService
+            notifier = Notifier(self.engine, SmsService(self.store, self.settings))
+        self.notifier = notifier
         self.client_factory = client_factory or self._client
         self.sleep = sleep
         self.stopping = threading.Event()
@@ -62,7 +67,7 @@ class Worker:
 
     # ---- lifecycle -------------------------------------------------------------
     def recover(self):
-        changed = self.auto.recover()
+        changed = self.auto.recover()  # audit rows here become "uncertain outcome" alerts on the first notify()
         lock = self.store.get("scan_lock")
         if lock and datetime.fromisoformat(lock) < datetime.now(timezone.utc) - timedelta(minutes=self.settings.scan_lease_minutes):
             self.store.set("scan_lock", None)
@@ -143,11 +148,20 @@ class Worker:
                 processed = self.engine.process()
             except Exception as exc:
                 log(logger, logging.ERROR, "queue processing failed", error=f"{type(exc).__name__}: {str(exc)[:300]}")
+        sms = self.notify()
         self.last_cycle = {"last_cycle": utcnow(), "last_scan_new": len(scan_result["new_ids"]) if scan_result else None,
                            "last_scan_at": scan_result["finished"] if scan_result else (self.last_cycle.get("last_scan_at")),
-                           "processed": [list(x) for x in processed]}
+                           "processed": [list(x) for x in processed], "sms": sms}
         self.heartbeat("idle")
         return scan_result, processed
+
+    def notify(self):
+        """Queue and send SMS for this cycle's events. A failure here never stops the worker."""
+        try:
+            return self.notifier.run()
+        except Exception as exc:
+            log(logger, logging.ERROR, "notifications failed", error=f"{type(exc).__name__}: {str(exc)[:300]}")
+            return {"error": type(exc).__name__}
 
     def run_forever(self, tick=60):
         self.recover()

@@ -1,0 +1,22 @@
+# Public HTTPS entry point. Caddy obtains and renews the TLS certificate for
+# PUBLIC_HOSTNAME automatically (ports 80 and 443 must reach this VM).
+# Only the gateway's paths are forwarded. The Streamlit dashboard is never
+# proxied: it stays on the VM's loopback (SSH tunnel, see docker-compose.yml).
+{$PUBLIC_HOSTNAME} {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	request_body {
+		max_size 64KB
+	}
+	@gateway path /sms/inbound /sms/status /login /logout /signed-in /healthz /r/* /j/* /s/*
+	handle @gateway {
+		reverse_proxy gateway:8080
+	}
+	handle {
+		respond 404
+	}
+}

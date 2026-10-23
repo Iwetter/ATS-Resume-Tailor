@@ -20,41 +20,71 @@ from .forms import FormField, Resolution
 
 # ---- field discovery ------------------------------------------------------
 
+# Label of one radio/checkbox option. Shared by discovery and filling so the
+# option text compared at fill time is exactly the text that was resolved.
+OPTION_LABEL_JS = r"""(el) => {
+  const text = n => (n ? (n.innerText || n.textContent || '') : '').replace(/\s+/g, ' ').trim();
+  if (el.getAttribute('aria-label')) return el.getAttribute('aria-label').replace(/\s+/g, ' ').trim();
+  if (el.id) { const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l) return text(l); }
+  const wrap = el.closest('label'); if (wrap) return text(wrap);
+  return (el.value || '').trim();
+}"""
+
 DISCOVER_JS = r"""
 (rootSel) => {
   const root = (rootSel && document.querySelector(rootSel)) || document.querySelector('form') || document.body;
   const text = el => (el ? (el.innerText || el.textContent || '') : '').replace(/\s+/g, ' ').trim();
+  const optionLabel = """ + OPTION_LABEL_JS + r""";
   const visible = el => { const s = getComputedStyle(el); const r = el.getBoundingClientRect();
     return el.type === 'file' || (s.display !== 'none' && s.visibility !== 'hidden' && (r.width > 0 || r.height > 0)); };
   let n = 0;
   const tag = el => { if (!el.dataset.aaid) el.dataset.aaid = 'f' + (n++); return `[data-aaid="${el.dataset.aaid}"]`; };
-  const labelFor = el => {
-    if (el.getAttribute('aria-label')) return el.getAttribute('aria-label');
-    const by = el.getAttribute('aria-labelledby');
-    if (by) return by.split(/\s+/).map(id => text(document.getElementById(id))).join(' ');
-    if (el.id) { const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l) return text(l); }
-    const wrap = el.closest('label'); if (wrap) return text(wrap);
-    const box = el.closest('.field, .application-question, .form-field, li, div');
-    if (box) { const l = box.querySelector('label, .application-label, .label'); if (l) return text(l); }
-    return el.getAttribute('placeholder') || el.name || '';
+  const byIds = ids => ids.split(/\s+/).map(id => text(document.getElementById(id))).join(' ').trim();
+  // Question text from the nearest question container (Greenhouse upload groups,
+  // Lever cards, generic .field wrappers). Never a label that wraps another input.
+  const questionLabel = el => {
+    let node = el.parentElement;
+    for (let depth = 0; node && node !== root && depth < 7; depth++, node = node.parentElement) {
+      const role = node.getAttribute('role') || '';
+      if (/group/.test(role) && node.getAttribute('aria-labelledby')) { const t = byIds(node.getAttribute('aria-labelledby')); if (t) return t; }
+      if (/group/.test(role) && node.getAttribute('aria-label')) return node.getAttribute('aria-label').trim();
+      if (node.tagName === 'FIELDSET') { const t = text(node.querySelector('legend')); if (t) return t; }
+      if (node.matches('.application-question, .field, .form-field, .question, li')) {
+        const l = Array.from(node.querySelectorAll('.application-label, legend, label, .label')).find(c => !c.querySelector('input, select, textarea') && !c.classList.contains('visually-hidden') && text(c));
+        if (l) return text(l);
+      }
+    }
+    return '';
   };
-  const isRequired = (el, label) => el.required || el.getAttribute('aria-required') === 'true' || /[*✱]\s*$|\(required\)/i.test(label);
+  const labelFor = el => {
+    if (el.getAttribute('aria-label')) return el.getAttribute('aria-label').trim();
+    if (el.getAttribute('aria-labelledby')) { const t = byIds(el.getAttribute('aria-labelledby')); if (t) return t; }
+    if (el.type === 'file') { const q = questionLabel(el); if (q) return q; }  // "Attach" buttons are not the question
+    if (el.id) { const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l && text(l)) return text(l); }
+    const wrap = el.closest('label');
+    if (wrap) { const inner = wrap.querySelector('.application-label'); return text(inner || wrap); }
+    return questionLabel(el) || el.getAttribute('placeholder') || el.name || '';
+  };
+  const marked = label => /[*✱]\s*$|\(required\)/i.test(label);
+  const isRequired = (el, label) => el.required || el.getAttribute('aria-required') === 'true' || marked(label) ||
+    !!el.closest('[role=group][aria-required=true], .required-field');
   const fields = [];
   const seenGroups = new Set();
   for (const el of root.querySelectorAll('input, select, textarea')) {
     const type = (el.getAttribute('type') || el.tagName).toLowerCase();
     if (['hidden', 'submit', 'button', 'reset', 'image', 'search'].includes(type) || el.disabled) continue;
+    // React-Select keeps an invisible required <input aria-hidden tabindex=-1> next to each
+    // combobox for native validation; it is not a question of its own.
+    if (type !== 'file' && el.getAttribute('aria-hidden') === 'true' && el.tabIndex < 0) continue;
     if (!visible(el)) continue;
     if (type === 'radio' || type === 'checkbox') {
       const group = el.name ? root.querySelectorAll(`input[name="${CSS.escape(el.name)}"]`) : [el];
       if (type === 'radio' || group.length > 1) {
         if (seenGroups.has(el.name)) continue; seenGroups.add(el.name);
-        const fs = el.closest('fieldset');
-        const legend = fs ? text(fs.querySelector('legend')) : '';
-        const options = Array.from(group).map(o => labelFor(o));
-        const label = legend || (el.closest('[role=radiogroup], [role=group]') ? (el.closest('[role=radiogroup], [role=group]').getAttribute('aria-label') || '') : '') || el.name;
-        const req = Array.from(group).some(o => o.required) || (fs && fs.getAttribute('aria-required') === 'true') || /[*✱]\s*$/.test(label);
-        fields.push({fid: `input[name="${el.name}"]`, label, kind: type === 'radio' ? 'radio' : 'checkbox_group', required: !!req, options, name: el.name});
+        const options = Array.from(group).map(o => optionLabel(o));
+        const label = questionLabel(el) || el.name;
+        const req = Array.from(group).some(o => o.required) || !!el.closest('[aria-required=true], .required-field') || marked(label);
+        fields.push({fid: `input[name="${CSS.escape(el.name)}"]`, label, kind: type === 'radio' ? 'radio' : 'checkbox_group', required: !!req, options, name: el.name});
         continue;
       }
       const label = labelFor(el);
@@ -70,6 +100,16 @@ DISCOVER_JS = r"""
   return fields;
 }
 """
+
+# Options of an open combobox listbox (React-Select and ARIA 1.2 comboboxes).
+COMBOBOX_OPTIONS_JS = r"""(sel) => {
+  const el = document.querySelector(sel);
+  if (!el) return [];
+  const id = el.getAttribute('aria-controls') || el.getAttribute('aria-owns');
+  const box = (id && document.getElementById(id)) || el.closest('.select-shell, .select, [class*=container]')?.querySelector('[role=listbox], [class*=menu]');
+  if (!box) return [];
+  return Array.from(box.querySelectorAll('[role=option]')).map(o => (o.innerText || o.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+}"""
 
 CAPTCHA_SELECTORS = ("iframe[src*='recaptcha']", "iframe[src*='hcaptcha']", "iframe[src*='challenges.cloudflare.com']", "iframe[src*='arkoselabs']",
                      "iframe[src*='funcaptcha']", "iframe[title*='challenge' i]", "[data-sitekey]", ".g-recaptcha", ".h-captcha", ".cf-turnstile",
@@ -229,11 +269,11 @@ def detect_blockers(page, adapter, response_status=None) -> list[Blocker]:
     return found
 
 
-def _form_root(page, adapter):
+def _form_root(page, adapter, open_form=True):
     for selector in adapter.form_selectors:
         if page.locator(selector).count():
             return selector
-    for selector in adapter.open_form_selectors:
+    for selector in adapter.open_form_selectors if open_form else ():
         button = page.locator(selector).first
         if button.count():
             button.click()
@@ -244,8 +284,54 @@ def _form_root(page, adapter):
     return None
 
 
+def combobox_options(page, fid, limit=300):
+    """Open a combobox's menu, read its options, close it. Nothing is typed or chosen.
+
+    Searchable comboboxes (city, school) list nothing until text is typed; they
+    return [] and are matched against the real options at fill time instead.
+    """
+    box = page.locator(fid).first
+    try:
+        box.focus(timeout=3000)
+        page.keyboard.press("ArrowDown")
+        page.wait_for_timeout(250)
+        return page.evaluate(COMBOBOX_OPTIONS_JS, fid)[:limit]
+    except Exception:
+        return []
+    finally:
+        try:
+            page.keyboard.press("Escape")
+        except Exception:
+            pass
+
+
 def discover(page, root):
-    return [FormField(**row) for row in page.evaluate(DISCOVER_JS, root)]
+    fields = [FormField(**row) for row in page.evaluate(DISCOVER_JS, root)]
+    for f in fields:
+        if f.kind == "combobox" and not f.options:
+            f.options = [o for o in combobox_options(page, f.fid) if not re.fullmatch(r"(?i)no options|loading\W*|type to search\W*", o)]
+    return fields
+
+
+def _option_text(page, locator):
+    return re.sub(r"\s+", " ", page.evaluate(OPTION_LABEL_JS, locator.element_handle())).strip()
+
+
+def _pick_combobox(page, box, value):
+    """Type the verified value, then click the one option that matches it exactly
+    (or uniquely contains it). No match → error → Needs Human Action."""
+    from .forms import _choose
+    box.click()
+    box.fill(str(value))
+    page.wait_for_timeout(600)  # searchable menus load asynchronously
+    options = page.locator("[role=option]")
+    texts = [re.sub(r"\s+", " ", options.nth(i).inner_text(timeout=2000)).strip() for i in range(min(options.count(), 300))]
+    chosen = _choose(texts, value)
+    if chosen is None:
+        box.fill("")
+        page.keyboard.press("Escape")
+        raise ValueError("no option matches the verified value")
+    options.nth(texts.index(chosen)).click()
 
 
 def fill(page, resolutions) -> tuple[list[str], list[str]]:
@@ -261,24 +347,15 @@ def fill(page, resolutions) -> tuple[list[str], list[str]]:
                 locator.first.select_option(label=str(r.value))
             elif r.kind == "radio":
                 group = page.locator(r.fid)
-                target = None
-                for i in range(group.count()):
-                    option = group.nth(i)
-                    label = page.evaluate("(el) => { const l = el.id && document.querySelector(`label[for='${CSS.escape(el.id)}']`); return (l ? l.innerText : (el.closest('label') ? el.closest('label').innerText : el.value)).trim(); }", option.element_handle())
-                    if label.strip() == str(r.value).strip():
-                        target = option
-                        break
+                wanted = re.sub(r"\s+", " ", str(r.value)).strip()
+                target = next((group.nth(i) for i in range(group.count()) if _option_text(page, group.nth(i)) == wanted), None)
                 if target is None:
                     raise ValueError("option not found")
                 target.check()
             elif r.kind == "checkbox":
                 locator.first.set_checked(bool(r.value))
             elif r.kind == "combobox":
-                box = locator.first
-                box.click()
-                box.fill(str(r.value))
-                option = page.locator("[role=option]", has_text=str(r.value)).first
-                option.click()
+                _pick_combobox(page, locator.first, r.value)
             else:
                 locator.first.fill(str(r.value))
             filled.append(r.fid)
@@ -311,7 +388,32 @@ def wait_for_outcome(page, adapter, before_url, timeout_ms=20000):
                 errors.append(loc.nth(i).inner_text(timeout=1000)[:200] or selector)
             except Exception:
                 errors.append(selector)
-    return "unknown", {"url": page.url, "errors": errors, "note": "No confirmation message or confirmation URL observed."}
+    # e.g. Greenhouse's emailed security code, or a challenge shown on submit.
+    late = sorted({b.kind for b in detect_blockers(page, adapter) if b.kind in ("captcha", "mfa", "login")})
+    return "unknown", {"url": page.url, "errors": errors, "post_submit_blockers": late,
+                       "note": "No confirmation message or confirmation URL observed."}
+
+
+def inspect_form(page, adapter, url) -> dict:
+    """Read-only check of a live candidate page for adapter validation.
+
+    Reports blockers, the form root, every discovered question with its
+    classification, and whether a submit button is found. Nothing is typed,
+    uploaded, selected or submitted.
+    """
+    from .forms import classify
+    response = page.goto(url, wait_until="domcontentloaded")
+    try:
+        page.wait_for_load_state("networkidle", timeout=8000)
+    except Exception:
+        pass
+    blockers = detect_blockers(page, adapter, response.status if response else None)
+    root = _form_root(page, adapter, open_form=False)
+    fields = discover(page, root) if root else []
+    submit = next((s for s in adapter.submit_selectors if root and page.locator(root + " " + s).count()), None)
+    return {"url": url, "final_url": page.url, "status": response.status if response else None,
+            "blockers": [{"kind": b.kind, "detail": b.detail} for b in blockers], "form": root, "submit_button": submit,
+            "fields": [{"label": f.label, "kind": f.kind, "required": f.required, "concept": classify(f), "options": f.options[:12]} for f in fields]}
 
 
 def run_application(page, adapter, url, resolve_fn, evidence_dir: Path, before_submit=None) -> RunReport:
@@ -330,6 +432,13 @@ def run_application(page, adapter, url, resolve_fn, evidence_dir: Path, before_s
         pass
     report.blockers = detect_blockers(page, adapter, response.status if response else None)
     if report.blockers:
+        if all(b.kind == "captcha" for b in report.blockers):
+            # Reference only, for the human who completes it: list each question and
+            # whether a verified answer exists. Nothing is typed, uploaded or clicked.
+            root = _form_root(page, adapter, open_form=False)
+            if root:
+                report.fields = discover(page, root)
+                report.resolutions = resolve_fn(report.fields)
         report.screenshot = _shot(page, evidence_dir, "blocked")
         return report
     root = _form_root(page, adapter)

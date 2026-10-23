@@ -124,3 +124,111 @@ def chromium_available():
         return True
     except Exception as exc:  # pragma: no cover - environment dependent
         pytest.skip(f"Chromium for Playwright is not installed: {type(exc).__name__}")
+
+
+# ---- SMS / gateway fixtures (official Twilio SDK over a fake HTTP transport) --------
+import json as _json
+import re as _re
+import uuid as _uuid
+
+TW_ACCOUNT = "AC" + "1" * 32
+TW_TOKEN = "fixture-auth-token-0123456789abcdef"
+TW_FROM = "+15005550006"
+USER_PHONE = "+14045550123"
+PUBLIC = "https://apply.example.test"
+GATEWAY_PASSWORD = "correct horse battery staple"
+
+
+class FakeTwilioHttp:
+    """Stands in for twilio.http.HttpClient. The real SDK builds every request;
+    nothing leaves the process. ``script`` queues responses or exceptions."""
+
+    def __init__(self):
+        self.requests, self.script = [], []
+        self.is_async, self.timeout, self.last_request, self.last_response = False, None, None, None
+        self.logger = None
+
+    def request(self, method, url, params=None, data=None, headers=None, auth=None, timeout=None, allow_redirects=False):
+        from twilio.http.response import Response
+        self.requests.append({"method": method, "url": url, "data": dict(data or {}), "auth_user": (auth or ("",))[0]})
+        if self.script:
+            item = self.script.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+        return Response(201, _json.dumps({"sid": "SM" + _uuid.uuid4().hex, "status": "queued", "account_sid": TW_ACCOUNT}))
+
+    @staticmethod
+    def error(status, code):
+        from twilio.http.response import Response
+        return Response(status, _json.dumps({"code": code, "message": f"fixture error {code}", "status": status}))
+
+    @property
+    def bodies(self):
+        return [r["data"].get("Body", "") for r in self.requests]
+
+
+SMS_SETTINGS = dict(twilio_account_sid=TW_ACCOUNT, twilio_auth_token=TW_TOKEN, twilio_from_number=TW_FROM, public_base_url=PUBLIC,
+                    gateway_secret_key="g" * 48, gateway_cookie_secure=False)
+
+
+class SmsEnv(AAEnv):
+    def __init__(self, tmp_path, master, router=None, **settings):
+        from autoapply.notify import Notifier
+        from autoapply.sms import SmsService
+        from autoapply.webauth import hash_password
+        merged = {**SMS_SETTINGS, "gateway_password_hash": hash_password(GATEWAY_PASSWORD, n=2 ** 12), **settings}
+        super().__init__(tmp_path, master, router=router, **merged)
+        self.twilio = FakeTwilioHttp()
+        self.sms = SmsService(self.store, self.settings, http_client=self.twilio)
+        self.notifier = Notifier(self.engine, self.sms)
+        self._client = None
+
+    def verify_phone(self, phone=USER_PHONE, enable=True):
+        self.sms.start_verification(phone)
+        code = _re.search(r"\b(\d{6})\b", self.twilio.bodies[-1])[1]
+        self.sms.confirm_verification(code)
+        if enable:
+            self.sms.save_prefs({"enabled": True})
+        return code
+
+    @property
+    def client(self):
+        if self._client is None:
+            from autoapply.gateway import create_app
+            self._client = create_app(self.settings, self.store, self.engine, self.sms).test_client()
+        return self._client
+
+    def inbound(self, body, sid=None, sender=USER_PHONE, account=TW_ACCOUNT, signature=None, client=None):
+        from twilio.request_validator import RequestValidator
+        params = {"MessageSid": sid or "SM" + _uuid.uuid4().hex, "AccountSid": account, "From": sender, "To": TW_FROM, "Body": body, "NumMedia": "0"}
+        sig = RequestValidator(TW_TOKEN).compute_signature(PUBLIC + "/sms/inbound", params) if signature is None else signature
+        return (client or self.client).post("/sms/inbound", data=params, headers={"X-Twilio-Signature": sig})
+
+    @staticmethod
+    def reply(response):
+        found = _re.search(r"<Message>(.*?)</Message>", response.get_data(as_text=True), _re.S)
+        return found[1] if found else None
+
+    def ready_application(self, job=None, approval_hash="hash-v1"):
+        """A Ready for Review application without running a browser."""
+        from autoapply import db as S
+        key = self.add_job(job)
+        app_id = self.auto.enqueue(key, job or aa_job(), "greenhouse:fixtureco", "dedupe-" + key[:8], "REVIEW",
+                                   {"fit": 72.0, "checks": [{"name": "Fit threshold", "status": "pass", "detail": "Fit 72 ≥ 60.", "blocks": "auto"}]})
+        self.auto.update(app_id, action="ready_for_review", state=S.READY, approval_hash=approval_hash, reasons=["Ready for your approval (REVIEW mode)."],
+                         plan={"fit_before": 72.0, "fit_after": 75.0})
+        return app_id
+
+    def login(self):
+        page = self.client.get("/login")
+        csrf = _re.search(r'name="csrf" value="([^"]+)"', page.get_data(as_text=True))[1]
+        return self.client.post("/login", data={"csrf": csrf, "password": GATEWAY_PASSWORD, "next": "/"})
+
+    def csrf(self, path):
+        return _re.search(r'name="csrf" value="([^"]+)"', self.client.get(path).get_data(as_text=True))[1]
+
+
+@pytest.fixture
+def smsenv(tmp_path, master):
+    return SmsEnv(tmp_path, master)

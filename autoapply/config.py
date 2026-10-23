@@ -74,6 +74,23 @@ class Settings:
     claude_enabled: bool = False
     health_port: int = 0
     log_level: str = "INFO"
+    # Twilio SMS (official SDK). The auth token also validates webhook signatures.
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = field(default="", repr=False)
+    twilio_api_key_sid: str = ""
+    twilio_api_key_secret: str = field(default="", repr=False)
+    twilio_from_number: str = ""
+    twilio_messaging_service_sid: str = ""
+    sms_approval_ttl_hours: int = 24
+    review_link_ttl_hours: int = 72
+    # Public gateway (Twilio webhooks + phone review pages). The dashboard stays private.
+    public_base_url: str = ""
+    gateway_host: str = "127.0.0.1"
+    gateway_port: int = 8080
+    gateway_secret_key: str = field(default="", repr=False)
+    gateway_password_hash: str = field(default="", repr=False)
+    gateway_session_hours: int = 12
+    gateway_cookie_secure: bool = True
 
     @property
     def data_dir(self) -> Path:
@@ -129,6 +146,21 @@ def load(**overrides) -> Settings:
         claude_enabled=_bool("CLAUDE_ENABLED"),
         health_port=_int("HEALTH_PORT", 0, 0, 65535),
         log_level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+        twilio_account_sid=os.environ.get("TWILIO_ACCOUNT_SID", "").strip(),
+        twilio_auth_token=_secret("TWILIO_AUTH_TOKEN").strip(),
+        twilio_api_key_sid=os.environ.get("TWILIO_API_KEY_SID", "").strip(),
+        twilio_api_key_secret=_secret("TWILIO_API_KEY_SECRET").strip(),
+        twilio_from_number=os.environ.get("TWILIO_FROM_NUMBER", "").strip(),
+        twilio_messaging_service_sid=os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "").strip(),
+        sms_approval_ttl_hours=_int("SMS_APPROVAL_TTL_HOURS", 24, 1, 72),
+        review_link_ttl_hours=_int("REVIEW_LINK_TTL_HOURS", 72, 1, 14 * 24),
+        public_base_url=os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/"),
+        gateway_host=os.environ.get("GATEWAY_HOST", "127.0.0.1"),
+        gateway_port=_int("GATEWAY_PORT", 8080, 1, 65535),
+        gateway_secret_key=_secret("GATEWAY_SECRET_KEY").strip(),
+        gateway_password_hash=_secret("GATEWAY_PASSWORD_HASH").strip(),
+        gateway_session_hours=_int("GATEWAY_SESSION_HOURS", 12, 1, 24 * 30),
+        gateway_cookie_secure=_bool("GATEWAY_COOKIE_SECURE", True),
     )
     values.update(overrides)
     return Settings(**values)

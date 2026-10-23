@@ -13,14 +13,22 @@ from hunter.models import Job, utcnow
 from hunter.service import DEFAULT_DB, WATCHLIST
 from hunter.storage import Store
 
-from . import config
+from . import config, controls
 from . import db as S
 from .engine import Engine, employer_key
 from .forms import attestation_hash
 from .llm import LLMError
-from .modes import CONFIRM_PHRASE, enable_auto, run_dry_run
+from .modes import CONFIRM_PHRASE, run_dry_run
 from .profile import TERMS, ApplicantProfile, load_profile, save_profile, validate_profile, verify_profile
+from .sms import CATEGORIES, DELIVERY, SmsService, mask
 from .worker import health
+
+MODE_HELP = {
+    controls.AUTOPILOT: "Tailors and submits qualifying applications without asking, only when your profile is verified, the employer and site are approved "
+                        "for automation, every eligibility gate passes and every required question has a verified answer. Anything else waits for approval.",
+    controls.APPROVAL: "Prepares each application and texts you a summary; nothing is submitted until you approve that exact version.",
+    controls.PAUSED: "Keeps discovering and scoring jobs (and alerting you), but prepares and submits nothing.",
+}
 
 
 def _age(ts):
@@ -55,24 +63,26 @@ def render():
         st.error("EMERGENCY STOP ACTIVE — no application step will run.")
     if not settings.allow_real_submission:
         st.info("Real submission is disabled on this server (AUTOAPPLY_ALLOW_REAL_SUBMISSION=false). Forms are prepared for review only.")
-    tabs = st.tabs(["Control", "Applicant profile", "Employers", "Queue", "Submitted", "Blocked & failed", "Discovery", "API usage", "Audit"])
+    tabs = st.tabs(["Control", "SMS & phone", "Applicant profile", "Employers", "Queue", "Submitted", "Blocked & failed", "Discovery", "API usage", "Audit"])
     with tabs[0]:
         _control(engine, settings, store, auto, stopped)
     with tabs[1]:
-        _profile(engine, store, auto)
+        _sms(engine, store, auto)
     with tabs[2]:
-        _employers(store, auto)
+        _profile(engine, store, auto)
     with tabs[3]:
-        _queue(engine, store, auto, [S.READY, S.APPROVED, S.QUEUED, S.PREPARING, S.SUBMITTING], "queue")
+        _employers(store, auto)
     with tabs[4]:
-        _submitted(auto)
+        _queue(engine, store, auto, [S.READY, S.APPROVED, S.QUEUED, S.PREPARING, S.SUBMITTING], "queue")
     with tabs[5]:
-        _queue(engine, store, auto, [S.NEEDS_HUMAN, S.UNKNOWN, S.FAILED, S.BLOCKED, S.SKIPPED, S.CANCELLED], "blocked")
+        _submitted(auto)
     with tabs[6]:
-        _discovery(store, auto, settings)
+        _queue(engine, store, auto, [S.NEEDS_HUMAN, S.UNKNOWN, S.FAILED, S.BLOCKED, S.SKIPPED, S.CANCELLED], "blocked")
     with tabs[7]:
-        _usage(engine, settings, auto)
+        _discovery(store, auto, settings)
     with tabs[8]:
+        _usage(engine, settings, auto)
+    with tabs[9]:
         _audit(auto)
 
 
@@ -82,7 +92,7 @@ def _control(engine, settings, store, auto, stopped):
     ok, beat = health(store, settings)
     heartbeat = store.get("worker_heartbeat") or {}
     a, b, c, d = st.columns(4)
-    a.metric("Mode", auto.mode() + (" (active)" if engine.auto_active() else ""))
+    a.metric("Mode", auto.mode() + (" (active)" if engine.auto_active() else ""), controls.permission_mode(engine), delta_color="off")
     b.metric("Master switch", "On" if auto.enabled() else "Off")
     c.metric("Worker", "Healthy" if ok else "Not running", heartbeat.get("state", "—"))
     d.metric("Last heartbeat", _age(heartbeat.get("at")))
@@ -104,17 +114,11 @@ def _control(engine, settings, store, auto, stopped):
         if enabled != auto.enabled():
             auto.set_enabled(enabled)
             st.rerun()
-        mode = st.radio("Mode", ["OFF", "REVIEW"], index=0 if auto.mode() == "OFF" else 1, horizontal=True, key="aa_mode",
-                        help="OFF: nothing is prepared or submitted. REVIEW (default): forms are prepared; you approve each submission. AUTO is enabled separately below.")
-        if auto.mode() != "AUTO" and mode != auto.mode():
-            auto.set_mode(mode)
-            st.rerun()
-        if auto.mode() == "AUTO" and st.button("Return to REVIEW mode", key="aa_review"):
-            auto.set_mode("REVIEW")
-            st.rerun()
+        _permission_control(engine, "ctl")
     with right:
-        st.markdown("**AUTO mode (separate explicit action)**")
+        st.markdown("**Full Autopilot (AUTO) — separate explicit action**")
         st.caption("Requires a passing dry run against fictional mocked forms in a sandboxed browser, a verified profile, and per-employer auto-submit permission. Any profile or resume change returns AUTO to inactive.")
+        st.dataframe(pd.DataFrame(controls.autopilot_readiness(engine)), hide_index=True, width="stretch")
         if st.button("Run dry-run validation", key="aa_dry"):
             with st.spinner("Running sandboxed dry run…"):
                 run_dry_run(engine)
@@ -126,10 +130,127 @@ def _control(engine, settings, store, auto, stopped):
         typed = st.text_input(f"Type {CONFIRM_PHRASE} to enable AUTO", key="aa_confirm")
         if st.button("Enable AUTO", disabled=not (dry and dry.get("ok")), key="aa_enable_auto"):
             try:
-                enable_auto(engine, typed)
+                controls.set_permission_mode(engine, controls.AUTOPILOT, confirmation=typed)
                 st.rerun()
             except ValueError as exc:
                 st.error(str(exc))
+
+
+def _permission_control(engine, key):
+    """Current permission mode plus explicit switch buttons.
+
+    Buttons, not a radio: a radio's remembered value would silently undo a
+    PAUSE that arrived by SMS on the next rerun.
+    """
+    current = controls.permission_mode(engine)
+    st.markdown(f"**Application permission mode: {controls.describe_mode(engine)}**")
+    st.caption(MODE_HELP[current])
+    cols = st.columns(3)
+    if current != controls.APPROVAL and cols[0].button("Approval Required", key=f"aa_pm_review_{key}", help=MODE_HELP[controls.APPROVAL]):
+        st.toast(controls.set_permission_mode(engine, controls.APPROVAL))
+        st.rerun()
+    if current != controls.PAUSED and cols[1].button("Pause", key=f"aa_pm_pause_{key}", help=MODE_HELP[controls.PAUSED]):
+        st.toast(controls.set_permission_mode(engine, controls.PAUSED))
+        st.rerun()
+    if current == controls.PAUSED and engine.store.get("paused_from") and cols[1].button("Resume previous mode", key=f"aa_pm_resume_{key}"):
+        try:
+            st.toast(controls.resume(engine)[1])
+            st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
+    if current != controls.AUTOPILOT:
+        cols[2].caption("Full Autopilot: run the dry run and type ENABLE AUTO in the Control tab.")
+
+
+# ---- SMS control panel ------------------------------------------------------------------
+
+def _sms(engine, store, auto):
+    base = engine.base_settings
+    sms = SmsService(store, base)
+    prefs = sms.prefs()
+    ok, why = sms.configured()
+    (st.success if ok else st.warning)("Twilio: " + why)
+    if base.public_base_url.startswith("https://"):
+        st.caption(f"In the Twilio console, set the number's *A message comes in* webhook to `{base.public_base_url}/sms/inbound` (HTTP POST). "
+                   "Review links open on your phone after signing in to the gateway.")
+    else:
+        st.warning("PUBLIC_BASE_URL (https://…) is not set: inbound commands are refused and texts carry no review links. See AUTOAPPLY.md → Phone access.")
+    ready, reason = sms.deliverable(prefs)
+    st.info("Alerts: " + ("on, to " + mask(prefs["phone"]) if ready else reason))
+
+    st.markdown("**Verified phone number**")
+    if prefs["phone_verified_at"]:
+        st.write(f"{mask(prefs['phone'])} · verified {_age(prefs['phone_verified_at'])}. Only this number can send YES/NO/PAUSE/RESUME/STATUS.")
+        if st.button("Remove this number", key="aa_sms_forget"):
+            sms.forget_phone()
+            st.rerun()
+    with st.form("aa_sms_phone", clear_on_submit=True):
+        phone = st.text_input("Mobile number (E.164, e.g. +14045550100)")
+        if st.form_submit_button("Send verification code", disabled=not ok):
+            try:
+                st.success("Code sent to " + mask(sms.start_verification(phone)))
+            except Exception as exc:  # validation or Twilio error; never echo credentials
+                st.error(str(exc)[:300])
+    if (store.get("sms_phone_pending") or {}).get("hash"):
+        with st.form("aa_sms_code", clear_on_submit=True):
+            code = st.text_input("6-digit code from the text", max_chars=6)
+            if st.form_submit_button("Verify number"):
+                try:
+                    st.success("Verified " + mask(sms.confirm_verification(code)))
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+
+    st.markdown("**Notifications**")
+    with st.form("aa_sms_prefs"):
+        enabled = st.toggle("SMS enabled", value=prefs["enabled"], disabled=not prefs["phone_verified_at"])
+        delivery = st.radio("Delivery", list(DELIVERY), index=list(DELIVERY).index(prefs["delivery"]), format_func=DELIVERY.get)
+        categories = st.multiselect("Notification categories", list(CATEGORIES), default=prefs["categories"], format_func=CATEGORIES.get)
+        c1, c2 = st.columns(2)
+        hour = c1.number_input("Daily summary hour (0–23)", 0, 23, int(prefs["summary_hour"]))
+        zone = c2.text_input("Time zone", prefs["timezone"])
+        if st.form_submit_button("Save notification settings"):
+            try:
+                sms.save_prefs({"enabled": enabled, "delivery": delivery, "categories": categories, "summary_hour": hour, "timezone": zone})
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+    if st.button("Send test SMS", disabled=not ready, key="aa_sms_test"):
+        try:
+            result = sms.send_test()
+            (st.success if result["status"] == "sent" else st.error)(f"Test message {result['status']}" + (f": {result['last_error']}" if result["last_error"] else "."))
+        except ValueError as exc:
+            st.error(str(exc))
+
+    st.markdown("**Application permissions**")
+    _permission_control(engine, "sms")
+    effective, prefs_saved = engine.settings, controls.preferences(store)
+    with st.form("aa_limits"):
+        c1, c2 = st.columns(2)
+        fit_auto = c1.number_input("Minimum fit score (Full Autopilot and high-match alerts)", 0.0, 100.0, float(effective.min_fit_auto), 1.0)
+        fit_review = c2.number_input("Minimum fit score to prepare for approval", 0.0, 100.0, float(effective.min_fit_review), 1.0)
+        per_day = c1.number_input("Daily submission limit (rolling 24 h)", 0, 50, int(effective.max_per_day))
+        per_company = c2.number_input("Per-company daily limit", 0, 10, int(effective.max_per_company_per_day))
+        st.caption(f"Server defaults: fit {base.min_fit_auto:g} / {base.min_fit_review:g}, {base.max_per_day}/day, {base.max_per_company_per_day}/company/day. "
+                   f"{'Custom values saved.' if any(v is not None for v in prefs_saved.values()) else 'Using server defaults.'}")
+        save, reset = st.columns(2)
+        if save.form_submit_button("Save limits"):
+            try:
+                controls.save_preferences(store, {"min_fit_auto": fit_auto, "min_fit_review": fit_review, "max_per_day": per_day,
+                                                  "max_per_company_per_day": per_company}, auto.audit)
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+        if reset.form_submit_button("Restore server defaults"):
+            controls.save_preferences(store, {k: None for k in controls.PREF_BOUNDS}, auto.audit)
+            st.rerun()
+
+    st.markdown("**Recent messages**")
+    rows = sms.outbox()
+    if rows:
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    else:
+        st.caption("No messages yet.")
 
 
 # ---- profile ------------------------------------------------------------------------

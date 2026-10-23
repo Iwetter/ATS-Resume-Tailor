@@ -68,6 +68,23 @@ CREATE TABLE IF NOT EXISTS llm_usage (
   reserved_usd REAL NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0,
   error TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS llm_cache (key TEXT PRIMARY KEY, task TEXT NOT NULL, created TEXT NOT NULL, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sms_outbox (
+  id INTEGER PRIMARY KEY, dedupe_key TEXT NOT NULL UNIQUE, category TEXT NOT NULL, application_id TEXT, body TEXT NOT NULL,
+  created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT,
+  claimed_at TEXT, sent_at TEXT, sid TEXT, delivery_status TEXT, last_error TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS sms_outbox_status ON sms_outbox(status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS sms_outbox_sid ON sms_outbox(sid);
+CREATE TABLE IF NOT EXISTS sms_inbound (
+  message_sid TEXT PRIMARY KEY, received_at TEXT NOT NULL, sender TEXT NOT NULL, command TEXT NOT NULL DEFAULT '',
+  outcome TEXT NOT NULL DEFAULT '', reply TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS approval_codes (
+  code TEXT PRIMARY KEY, application_id TEXT NOT NULL, approval_hash TEXT NOT NULL, created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL, used_at TEXT, used_action TEXT, used_via TEXT);
+CREATE INDEX IF NOT EXISTS approval_codes_app ON approval_codes(application_id, approval_hash);
+CREATE TABLE IF NOT EXISTS review_links (
+  code TEXT PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT);
+CREATE INDEX IF NOT EXISTS review_links_target ON review_links(kind, target);
+CREATE TABLE IF NOT EXISTS login_attempts (id INTEGER PRIMARY KEY, at TEXT NOT NULL, client TEXT NOT NULL, ok INTEGER NOT NULL);
 '''
 
 

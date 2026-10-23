@@ -41,6 +41,11 @@ from .redaction import log
 
 logger = logging.getLogger("autoapply.engine")
 MAX_PREP_ATTEMPTS = 3
+# States the worker may legitimately find an application in while it holds
+# the processing lease. Every worker-side transition is a compare-and-set
+# against these, so a human cancel/reject (dashboard or SMS) always wins.
+IN_FLIGHT = (S.QUEUED, S.PREPARING, S.APPROVED, S.SUBMITTING)
+CANCELLABLE = (S.QUEUED, S.PREPARING, S.NEEDS_HUMAN, S.READY, S.APPROVED, S.FAILED, S.BLOCKED, S.SKIPPED)
 
 
 def write_cover_letter(text, applicant, path):
@@ -68,10 +73,16 @@ def dedupe_key(job: Job):
 class Engine:
     def __init__(self, store, settings, browser=None, claude=None):
         from .llm import Claude
-        self.store, self.settings = store, settings
+        self.store, self.base_settings = store, settings
         self.auto = AutoStore(store)
         self.browser = browser or BrowserFactory(settings)
         self.claude = claude if claude is not None else Claude(self.auto, settings)
+
+    @property
+    def settings(self):
+        """Environment settings with the dashboard's persisted fit/cap preferences applied."""
+        from .controls import effective
+        return effective(self.base_settings, self.store)
 
     # ---- state helpers -------------------------------------------------------
     def stopped(self):
@@ -159,18 +170,19 @@ class Engine:
             record, job = self._job(app["job_key"])
             gate = self.evaluate(app["job_key"], "prepare", enqueue=False)
             if gate is None or not gate.prepare_ok:
-                self.auto.update(app_id, action="blocked", state=S.BLOCKED, gates=gate.as_dict() if gate else {},
+                self.auto.update(app_id, action="blocked", expected=S.QUEUED, state=S.BLOCKED, gates=gate.as_dict() if gate else {},
                                  reasons=[gate.summary if gate else "Job no longer exists."])
-                return app_id, S.BLOCKED
-            self.auto.update(app_id, action="preparing", expected=S.QUEUED, state=S.PREPARING, gates=gate.as_dict())
+                return app_id, self._state(app_id)
+            if not self.auto.update(app_id, action="preparing", expected=S.QUEUED, state=S.PREPARING, gates=gate.as_dict()):
+                return app_id, self._state(app_id)  # cancelled or changed by a human meanwhile
             master, applicant, _ = self._context()
             plan = self._plan(app, job, master)
             adapter, url = adapter_for(job)
             if adapter is None:
-                self.auto.update(app_id, action="needs_human", state=S.NEEDS_HUMAN, plan=plan,
+                self.auto.update(app_id, action="needs_human", expected=S.PREPARING, state=S.NEEDS_HUMAN, plan=plan,
                                  reasons=["No supported candidate-form adapter for this job (Greenhouse and Lever are supported). Apply manually."])
-                return app_id, S.NEEDS_HUMAN
-            self.auto.update(app_id, adapter=adapter.name, apply_url=url, plan=plan)
+                return app_id, self._state(app_id)
+            self.auto.update(app_id, expected=S.PREPARING, adapter=adapter.name, apply_url=url, plan=plan)
             auto_path = self.auto.mode() == "AUTO" and self.auto_active(applicant) and gate.auto_ok
             refusal = []
             before = self._before_submit(app_id, token, gate, refusal, claimed, approval_hash=None) if auto_path else None
@@ -281,6 +293,10 @@ class Engine:
             return True
         return check
 
+    def _state(self, app_id):
+        app = self.auto.application(app_id)
+        return app["state"] if app else None
+
     def _settle(self, app_id, job, plan, report, refusal, auto_path):
         app = self.auto.application(app_id)
         details = {"url": report.url, "screenshot": report.screenshot, "fields": [r.public() for r in report.resolutions],
@@ -290,38 +306,41 @@ class Engine:
             self.auto.finish_submission(app_id, report.outcome)
             confirmation = {**report.confirmation, "at": utcnow()}
             if report.outcome == "confirmed":
-                self.auto.update(app_id, action="applied_confirmed", state=S.APPLIED, submitted_at=utcnow(), confirmation=confirmation, plan=plan,
-                                 evidence_dir=str(Path(report.screenshot).parent) if report.screenshot else None, reasons=[])
-                self.store.status(app["job_key"], "Applied", f"Auto Apply confirmed submission {utcnow()} ({confirmation.get('matched_text') or confirmation.get('url')}). Application {app_id}.")
-                return S.APPLIED
-            self.auto.update(app_id, action="submission_unknown", state=S.UNKNOWN, confirmation=confirmation, plan=plan,
-                             reasons=["Submit was clicked but no confirmation was observed. Check your email/the employer portal before any retry."])
-            return S.UNKNOWN
+                if self.auto.update(app_id, action="applied_confirmed", expected=S.SUBMITTING, state=S.APPLIED, submitted_at=utcnow(), confirmation=confirmation,
+                                    plan=plan, evidence_dir=str(Path(report.screenshot).parent) if report.screenshot else None, reasons=[]):
+                    self.store.status(app["job_key"], "Applied", f"Auto Apply confirmed submission {utcnow()} ({confirmation.get('matched_text') or confirmation.get('url')}). Application {app_id}.")
+                return self._state(app_id)
+            reasons = ["Submit was clicked but no confirmation was observed. Check your email/the employer portal before any retry."]
+            if confirmation.get("post_submit_blockers"):
+                reasons.insert(0, "The employer asked for more after the click (" + ", ".join(confirmation["post_submit_blockers"]) + "); finish it on the employer page.")
+            self.auto.update(app_id, action="submission_unknown", expected=S.SUBMITTING, state=S.UNKNOWN, confirmation=confirmation, plan=plan, reasons=reasons)
+            return self._state(app_id)
         if report.blockers:
-            self.auto.update(app_id, action="needs_human", state=S.NEEDS_HUMAN, plan=plan,
+            self.auto.update(app_id, action="needs_human", expected=IN_FLIGHT, state=S.NEEDS_HUMAN, plan=plan,
                              reasons=[f"{b.kind}: {b.detail}" for b in report.blockers])
-            return S.NEEDS_HUMAN
+            return self._state(app_id)
         missing = missing_required(report.resolutions)
         if report.fill_errors or missing:
-            self.auto.update(app_id, action="needs_human", state=S.NEEDS_HUMAN, plan=plan,
+            self.auto.update(app_id, action="needs_human", expected=IN_FLIGHT, state=S.NEEDS_HUMAN, plan=plan,
                              reasons=[f"Unanswered required question: {r.label[:120]} ({r.reason or 'no verified answer'})" for r in missing] + report.fill_errors)
-            return S.NEEDS_HUMAN
+            return self._state(app_id)
         approval = self._approval_hash(plan, report)
         reasons = refusal or (["Ready for your approval (REVIEW mode)."] if not auto_path else [])
-        self.auto.update(app_id, action="ready_for_review", state=S.READY, plan=plan, approval_hash=approval, reasons=reasons)
-        return S.READY
+        self.auto.update(app_id, action="ready_for_review", expected=IN_FLIGHT, state=S.READY, plan=plan, approval_hash=approval, reasons=reasons)
+        return self._state(app_id)
 
     def _failure(self, app_id, exc, claimed):
         message = f"{type(exc).__name__}: {str(exc)[:400]}"
         if claimed:
             # The submit claim exists: outcome is uncertain, never retried.
             self.auto.finish_submission(app_id, "error-after-claim")
-            self.auto.update(app_id, action="submission_unknown", state=S.UNKNOWN, last_error=message,
+            self.auto.update(app_id, action="submission_unknown", expected=S.SUBMITTING, state=S.UNKNOWN, last_error=message,
                              reasons=["An error occurred after the submission step began; verify on the employer site."])
-            return S.UNKNOWN
-        self.auto.update(app_id, action="preparation_failed", state=S.FAILED, last_error=message, reasons=["Preparation failed; it will be retried with backoff."])
+            return self._state(app_id)
+        self.auto.update(app_id, action="preparation_failed", expected=(S.QUEUED, S.PREPARING, S.APPROVED), state=S.FAILED, last_error=message,
+                         reasons=["Preparation failed; it will be retried with backoff."])
         log(logger, logging.ERROR, "preparation failed", app=app_id, error=message)
-        return S.FAILED
+        return self._state(app_id)
 
     # ---- approved (REVIEW) submissions ------------------------------------------
     def submit_approved(self, app_id):
@@ -334,21 +353,21 @@ class Engine:
             record, job = self._job(app["job_key"])
             gate = self.evaluate(app["job_key"], "pre_submit", enqueue=False)
             if gate is None or not gate.prepare_ok:
-                self.auto.update(app_id, action="blocked", state=S.BLOCKED, reasons=[gate.summary if gate else "Job no longer exists."])
-                return app_id, S.BLOCKED
+                self.auto.update(app_id, action="blocked", expected=S.APPROVED, state=S.BLOCKED, reasons=[gate.summary if gate else "Job no longer exists."])
+                return app_id, self._state(app_id)
             master, applicant, _ = self._context()
             if app["plan"].get("source_hash") != master.source_hash:
-                self.auto.update(app_id, action="approval_invalidated", state=S.QUEUED, approval_hash=None, reasons=["Master resume changed after approval."])
-                return app_id, S.QUEUED
+                self.auto.update(app_id, action="approval_invalidated", expected=S.APPROVED, state=S.QUEUED, approval_hash=None, reasons=["Master resume changed after approval."])
+                return app_id, self._state(app_id)
             adapter, url = adapter_for(job)
             refusal = []
             before = self._before_submit(app_id, token, gate, refusal, claimed, approval_hash=app["approval_hash"])
             report = self._run(app_id, adapter, url, app["plan"], applicant, before)
             if not report.submitted and not report.blockers and not missing_required(report.resolutions) and not report.fill_errors:
                 # Refused at the final gate: return to review with the reasons.
-                self.auto.update(app_id, action="submission_refused", state=S.READY, reasons=refusal,
+                self.auto.update(app_id, action="submission_refused", expected=S.APPROVED, state=S.READY, reasons=refusal,
                                  approval_hash=self._approval_hash(app["plan"], report))
-                return app_id, S.READY
+                return app_id, self._state(app_id)
             return app_id, self._settle(app_id, job, app["plan"], report, refusal, False)
         except Exception as exc:
             return app_id, self._failure(app_id, exc, claimed["value"])
@@ -368,7 +387,8 @@ class Engine:
             raise ValueError("A submitted application cannot be re-prepared.")
         if app["state"] == S.UNKNOWN:
             raise ValueError("Resolve the Unknown outcome first (mark Applied or Not submitted).")
-        self.auto.update(app_id, actor=actor, action="requeued", state=S.QUEUED, approval_hash=None, reasons=[reason], attempts=0)
+        if not self.auto.update(app_id, actor=actor, action="requeued", expected=CANCELLABLE, state=S.QUEUED, approval_hash=None, reasons=[reason], attempts=0):
+            raise ValueError("The application changed state; reload and try again.")
 
     def resolve_unknown(self, app_id, submitted: bool, note, actor="user"):
         """Human investigation result for an Unknown outcome."""
@@ -389,6 +409,8 @@ class Engine:
 
     def cancel(self, app_id, actor="user"):
         app = self.auto.application(app_id)
-        if app["state"] in (S.SUBMITTING, S.APPLIED, S.UNKNOWN):
+        if not app or app["state"] in (S.SUBMITTING, S.APPLIED, S.UNKNOWN):
             raise ValueError("This application can no longer be cancelled.")
-        self.auto.update(app_id, actor=actor, action="cancelled", state=S.CANCELLED)
+        # Compare-and-set: a cancel never overwrites a submission that started meanwhile.
+        if not self.auto.update(app_id, actor=actor, action="cancelled", expected=CANCELLABLE, state=S.CANCELLED):
+            raise ValueError("This application can no longer be cancelled.")
