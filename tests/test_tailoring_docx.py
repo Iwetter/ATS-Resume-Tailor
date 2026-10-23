@@ -188,3 +188,15 @@ def test_word_or_libreoffice_render_is_one_page_and_extractable(docx_master):
     result = export_tailored(data, master, final)
     assert result["ok"], result["issues"]
     assert result["pages"] == 1 and pdf_check(result["pdf"], final)[1] == []
+
+
+def test_bold_label_with_leading_space_keeps_its_run():
+    """Found on a real resume: skill lines start with a bold run " PCB & Electrical: " (leading space)."""
+    from ats.docx_tailor import set_text
+    doc = Document()
+    p = doc.add_paragraph()
+    label = p.add_run(" PCB & Electrical: ")
+    label.bold = True
+    p.add_run("Altium Designer, KiCad, Schematic Capture")
+    set_text(p, "PCB & Electrical: KiCad, Altium Designer, Schematic Capture")
+    assert [(r.text, bool(r.bold)) for r in p.runs] == [(" PCB & Electrical: ", True), ("KiCad, Altium Designer, Schematic Capture", False)]

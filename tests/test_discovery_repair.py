@@ -48,7 +48,10 @@ def test_clearly_irrelevant_titles_are_rejected_with_a_reason(title, verdict):
     assert title_screen(title) == verdict
 
 
-@pytest.mark.parametrize("title", ["Software Engineering Intern", "Mechanical Engineering Intern", "Data Science Intern", "Marketing Intern Summer 2027"])
+@pytest.mark.parametrize("title", ["Software Engineering Intern", "Mechanical Engineering Intern", "Data Science Intern", "Marketing Intern Summer 2027",
+                                   # false positives seen in the live scan: descriptions mention electrical work, the role is not EE
+                                   "2027 Technical Program Manager Intern", "Thermal Intern (Summer 2027)", "Engineering Intern - Aero Design - Summer 2027",
+                                   "Military DoD SkillBridge Internship - Maintenance Technician"])
 def test_other_fields_explain_themselves(title):
     decision = decide(job(title), Profile(), Filters(), NOW)
     assert not decision.eligible and any(r.startswith("Unrelated discipline: Title names another field") for r in decision.reasons)

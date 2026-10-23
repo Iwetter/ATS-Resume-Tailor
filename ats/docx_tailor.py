@@ -82,14 +82,19 @@ def set_text(paragraph, new_text: str) -> None:
         return
     lead_text, lead = "", 0
     body_format = (runs[-1].bold, runs[-1].italic)
+    target = new_text.lstrip()
+    # Compare whitespace-insensitively: real resumes often start a bold label run with a space
+    # (" Tools: "), while the parsed line text is trimmed.
     for run in runs[:-1]:
-        if run.text and new_text.startswith(lead_text + run.text) and (run.bold, run.italic) != body_format:
+        candidate = (lead_text + run.text).strip()
+        if run.text.strip() and target.startswith(candidate) and (run.bold, run.italic) != body_format:
             lead_text += run.text
             lead += 1
         else:
             break
     body = runs[lead:]
-    body[0].text = new_text[len(lead_text):]
+    rest = target[len(lead_text.strip()):]
+    body[0].text = rest.lstrip() if lead_text[-1:].isspace() else rest
     for run in body[1:]:
         run._r.getparent().remove(run._r)
 
