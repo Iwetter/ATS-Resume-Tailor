@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 
 from bs4 import BeautifulSoup
 
-from .filtering import potential_title
+from .filtering import title_screen
 from .http import SourceError
 from .models import Job, Snapshot, canonical_url, timestamp
 from .sources import plain, compensation, employer_from_url
@@ -86,7 +86,7 @@ def fetch_public_board(employer, client, max_details=60):
     parsed = employer_from_url(employer.name, employer.career_url)
     if parsed.source != employer.source or parsed.board != employer.board:
         raise SourceError("Employer board and its official career URL do not agree.")
-    checks, warnings, jobs, ids = [], [], [], set()
+    checks, warnings, jobs, ids, rejected = [], [], [], set(), []
     any_cached = False
 
     def get(url):
@@ -124,8 +124,12 @@ def fetch_public_board(employer, client, max_details=60):
                         pending.append(loc)
                 elif "/job/" in urlsplit(loc).path:
                     ids.add(loc)
-                    if potential_title(re.sub(r"[-_]", " ", unquote(urlsplit(loc).path.rsplit("/", 1)[-1]))):
+                    slug_title = re.sub(r"[-_]", " ", unquote(urlsplit(loc).path.rsplit("/", 1)[-1]))
+                    verdict = title_screen(slug_title)
+                    if verdict == "keep":
                         pages.append(loc)
+                    else:
+                        rejected.append((slug_title, verdict))
         if pending:
             warnings.append("Sitemap request limit reached.")
         pages = list(dict.fromkeys(pages))
@@ -137,11 +141,14 @@ def fetch_public_board(employer, client, max_details=60):
             try:
                 html, checked = get(url)
                 job = workday_job(employer, url, html, checked)
-                if potential_title(job.title):
+                verdict = title_screen(job.title)
+                if verdict == "keep":
                     jobs.append(job)
+                else:
+                    rejected.append((job.title, verdict))
             except (SourceError, ValueError, TypeError) as exc:
                 warnings.append(f"Public job detail unavailable for {url}: {exc}")
-        return Snapshot(tuple(jobs), frozenset(ids), min(checks), False, any_cached, tuple(dict.fromkeys(warnings)))
+        return Snapshot(tuple(jobs), frozenset(ids), min(checks), False, any_cached, tuple(dict.fromkeys(warnings)), len(ids), tuple(rejected))
 
     personio = employer.source == "personio"
     base = parsed.career_url
@@ -160,7 +167,9 @@ def fetch_public_board(employer, client, max_details=60):
         if not source_id or not title:
             raise SourceError("Public feed has an incomplete job identity; no closures inferred.")
         ids.add(source_id)
-        if not potential_title(title):
+        verdict = title_screen(title)
+        if verdict != "keep":
+            rejected.append((plain(title), verdict))
             continue
         if personio:
             description = "\n".join(plain(value(section, "name")) + "\n" + plain(value(section, "value")) for section in row.findall("jobDescriptions/jobDescription"))
@@ -181,4 +190,4 @@ def fetch_public_board(employer, client, max_details=60):
                         canonical_url(url), description, country=country, employment_type=value(row, "employmentType") or value(row, "employment-type"),
                         published_at=published, publication_basis=basis, checked_at=checked,
                         compensation=compensation({}, description), availability_basis="Published job in official public XML feed"))
-    return Snapshot(tuple(jobs), frozenset(ids), min(checks), True, any_cached, tuple(warnings))
+    return Snapshot(tuple(jobs), frozenset(ids), min(checks), True, any_cached, tuple(warnings), len(ids), tuple(rejected))

@@ -118,6 +118,9 @@ def scan(store, employers=None, master=None, profile=None, filters=None, client=
         scan_id = db.execute("INSERT INTO scans(started) VALUES (?)", (started,)).lastrowid
     client = client or PublicClient(store)
     result = {"scan_id": scan_id, "started": started, "new_ids": [], "boards": [], "jobs_checked": 0, "scored": 0}
+    # Every stage is counted so nothing is discarded without an explanation the UI can show.
+    diag = {"listed": 0, "rejected_not_internship": 0, "rejected_non_technical": 0, "retained": 0, "eligible": 0, "scored": 0, "decision_reasons": {}}
+    title_rejections, decision_rejections = [], []
     try:
         active = [e for e in employers if e.enabled and e.source != "manual"]
         for n, employer in enumerate(active):
@@ -126,24 +129,42 @@ def scan(store, employers=None, master=None, profile=None, filters=None, client=
             try:
                 snapshot = fetch_board(employer, client)
                 new = 0
+                diag["listed"] += snapshot.listed or len(snapshot.all_ids)
+                for title, verdict in snapshot.rejected:
+                    diag["rejected_" + verdict] += 1
+                    if verdict == "non_technical" and len(title_rejections) < 300:
+                        title_rejections.append({"employer": employer.name, "title": title, "reason": "Internship in a non-technical field (title)"})
                 for job in snapshot.jobs:
                     key, fresh = store.upsert(job, started)
                     if fresh:
                         result["new_ids"].append(key)
                         new += 1
                     result["jobs_checked"] += 1
+                    diag["retained"] += 1
                     decision = decide(job, profile, filters, started)
+                    if decision.eligible:
+                        diag["eligible"] += 1
+                    for reason in decision.reasons:
+                        category = reason.split(":")[0]
+                        diag["decision_reasons"][category] = diag["decision_reasons"].get(category, 0) + 1
+                    if decision.reasons and len(decision_rejections) < 500:
+                        decision_rejections.append({"employer": employer.name, "title": job.title, "key": key, "reasons": list(decision.reasons)})
                     if decision.eligible and master is not None and job.description:
                         if score_job(job, master, store):
                             result["scored"] += 1
+                            diag["scored"] += 1
                     if on_job:
                         on_job(key, job, fresh)
                 if snapshot.complete:
                     store.close_absent(employer, snapshot.all_ids, snapshot.checked_at)
-                result["boards"].append({"employer": employer.name, "source": employer.source, "board": employer.board, "success": True, "total_public_jobs": len(snapshot.all_ids), "engineering_internships": len(snapshot.jobs), "new": new, "checked_at": snapshot.checked_at, "cached": snapshot.cached, "complete": snapshot.complete, "warnings": list(snapshot.warnings)})
+                result["boards"].append({"employer": employer.name, "source": employer.source, "board": employer.board, "success": True, "total_public_jobs": len(snapshot.all_ids), "engineering_internships": len(snapshot.jobs), "new": new, "checked_at": snapshot.checked_at, "cached": snapshot.cached, "complete": snapshot.complete, "warnings": list(snapshot.warnings),
+                                         "listed": snapshot.listed, "title_rejected": len(snapshot.rejected)})
             except (SourceError, KeyError, TypeError, ValueError) as exc:
                 result["boards"].append({"employer": employer.name, "source": employer.source, "board": employer.board, "success": False, "error": str(exc), "rate_limited": isinstance(exc, RateLimited), "retry_after": getattr(exc, "retry_after", None)})
         result["finished"] = utcnow()
+        result["diagnostics"] = diag
+        result["title_rejections"] = title_rejections
+        result["decision_rejections"] = decision_rejections
         result["http_requests"] = getattr(client, "requests", None)
         result["http_cache_hits"] = getattr(client, "cache_hits", None)
         store.set("last_scan", result)

@@ -108,6 +108,13 @@ class Store:
             rows += [r for r in defaults if r["source"] in {"workday", "recruitee", "personio"} and (r["source"], r["board"]) not in keys]
             self.set("employers", rows)
             self.set("expanded_boards_v2", True)
+        # October 2026: verified EE/hardware/robotics/defense/semiconductor boards. Added once;
+        # boards the user removed later are not re-added, saved names and toggles are kept.
+        if rows is not None and not self.get("expanded_boards_v3"):
+            keys = {(r["source"], r["board"]) for r in rows}
+            rows += [r for r in defaults if (r["source"], r["board"]) not in keys]
+            self.set("employers", rows)
+            self.set("expanded_boards_v3", True)
         return [Employer(**row) for row in (rows if rows is not None else defaults)]
 
     def save_master(self, resume, original: bytes | None = None, filename: str = ""):

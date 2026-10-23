@@ -5,29 +5,91 @@ import re
 
 from .models import Decision, Filters, Flag, Job, Profile, timestamp
 
-INTERNSHIP = re.compile(r"\bintern(?:ship)?s?\b|\bco[ -]?op\b|cooperative education", re.I)
+INTERNSHIP = re.compile(r"\bintern(?:ship)?s?\b|\bco[ -]?op\b|cooperative education|\bstudent (?:engineer|researcher|technician|trainee)|\bengineering student\b|\bstudent worker\b.*\bengineer", re.I)
 DISCIPLINES = (
-    ("Embedded / Firmware", r"embedded|firmware"),
-    ("PCB / Hardware", r"\bpcb\b|hardware|electronics"),
-    ("Electrical", r"electrical|\bee\b"),
-    ("FPGA / Semiconductor", r"\bfpga\b|digital design|\basic\b|\bsoc\b|semiconductor|silicon"),
-    ("Validation / Test", r"validation|verification|test engineer|hardware test"),
-    ("Robotics / Controls", r"robotics|robotic|control systems|controls engineer|systems integration"),
-    ("Power / RF", r"power electronics|power systems|\brf\b|radio frequency"),
+    ("Embedded / Firmware", r"embedded|firmware|microcontroller|\bmcu\b|\brtos\b|device driver|bootloader"),
+    ("FPGA / Semiconductor", r"\bfpga\b|digital design|\basic\b|\bsoc\b|semiconductor|silicon|\brtl\b|verilog|vhdl|\bvlsi\b|chip design|mixed[- ]signal|analog design|physical design|design verification"),
+    ("PCB / Hardware", r"\bpcb\b|hardware|electronics|circuit|board design|avionics"),
+    ("Electrical", r"electrical|\bee\b|\becE\b|electronic engineering"),
+    ("Robotics / Controls", r"robotics|robotic|control systems|controls?\b(?: engineer| intern| systems)|systems integration|mechatronic|automation|\bplc\b|motion control|guidance,? navigation|\bgnc\b|autonomy|autonomous systems"),
+    ("Power / RF", r"power electronics|power systems|power engineer|\brf\b|radio frequency|antenna|microwave|battery|energy systems|substation|grid|motor drive"),
+    ("Validation / Test", r"validation|verification|test engineer|hardware test|test (?:&|and) (?:measurement|evaluation)|reliability|quality engineer"),
 )
+# Evidence in a description for a title that only says "Engineering", "Systems" etc.
+DESCRIPTION_TERMS = {
+    "Embedded / Firmware": r"embedded|firmware|microcontroller|\bmcu\b|\brtos\b|stm32|esp32|arm cortex|\bi2c\b|\bspi\b|\buart\b|\bcan bus\b|device drivers?|bootloader|embedded c\b",
+    "FPGA / Semiconductor": r"\bfpga\b|verilog|vhdl|systemverilog|\brtl\b|\basic\b|digital design|digital logic|timing closure|vivado|quartus|synthesis|semiconductor|silicon|\bsoc\b",
+    "PCB / Hardware": r"\bpcb\b|schematic|altium|kicad|orcad|cadence allegro|board bring[- ]up|circuit design|hardware design|layout|oscilloscope|soldering|electronic components",
+    "Electrical": r"electrical engineering|electrical systems|electrical design|circuits?|analog|power supplies|wiring|harness|signal integrity|avionics|multimeter|electronics",
+    "Robotics / Controls": r"robotics|\bros2?\b|control systems|controls engineering|\bplc\b|motion control|mechatronics|kinematics|sensor fusion|simulink|feedback control|automation|actuators?|motors?\b",
+    "Power / RF": r"power electronics|inverters?|converters?|battery|motor drives?|\brf\b|antennas?|microwave|transceivers?|power systems|high voltage|grid",
+    "Validation / Test": r"hardware test|test fixtures?|labview|test automation|validation testing|environmental testing|test plans?|failure analysis",
+}
+# A title is still worth reading when it says engineering/technical but names no field.
+GENERIC_ENGINEERING = re.compile(r"engineer|engineering|systems|technical|technology|r&d|research|development|design|test|science|stem|technician|lab\b", re.I)
+# Interns in these fields are not engineering roles; rejected at retrieval with an explanation.
+NON_TECHNICAL_TITLE = re.compile(r"\b(?:marketing|sales|finance|financial|accounting|account(?:ing)? (?:executive|manager)|business (?:development|operations|analyst)|human resources|\bhr\b|recruit\w*|talent|people (?:operations|team)|legal|paralegal|law clerk|communications|public relations|\bpr\b|social media|content|copywrit\w*|graphic design|ux|ui designer|product design(?:er)?|brand|events?|customer success|customer support|community|policy|government affairs|investor|treasury|tax|audit|procurement|purchasing|supply chain|logistics|real estate|facilities|administrative|executive assistant|office)\b", re.I)
+# Fields outside electrical engineering that are named explicitly in a title.
+OTHER_DISCIPLINE_TITLE = re.compile(r"\b(?:mechanical|civil|chemical|structural|aerospace structures|materials|biomedical|industrial engineer\w*|manufacturing engineer\w*|software|data scien\w*|data analy\w*|machine learning|\bml\b|\bai\b|security|cyber\w*|cloud|devops|site reliability|front[- ]?end|back[- ]?end|full[- ]?stack|web|mobile|ios|android|quant\w*|actuar\w*)\b", re.I)
 US_STATES = "Alabama Alaska Arizona Arkansas California Colorado Connecticut Delaware Florida Georgia Hawaii Idaho Illinois Indiana Iowa Kansas Kentucky Louisiana Maine Maryland Massachusetts Michigan Minnesota Mississippi Missouri Montana Nebraska Nevada Ohio Oklahoma Oregon Pennsylvania Tennessee Texas Utah Vermont Virginia Washington Wisconsin Wyoming".split()
 US_ABBREVIATIONS = "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split()
 
 
+def title_screen(title: str) -> str:
+    """Retrieval-stage verdict on a title alone: "keep", "not_internship" or "non_technical".
+
+    Deliberately broad: any internship/co-op title that is not clearly a
+    non-technical role is kept and judged on its full description later, so
+    "Engineering Intern" or "Summer 2027 Engineering Co-op" is never dropped
+    for lacking a field name.
+    """
+    if not INTERNSHIP.search(title):
+        return "not_internship"
+    if NON_TECHNICAL_TITLE.search(title) and not any(re.search(p, title, re.I) for _, p in DISCIPLINES):
+        return "non_technical"
+    return "keep"
+
+
 def potential_title(title: str) -> bool:
-    return bool(INTERNSHIP.search(title)) and any(re.search(p, title, re.I) for _, p in DISCIPLINES)
+    return title_screen(title) == "keep"
+
+
+def _description_evidence(description: str) -> dict[str, list[str]]:
+    found = {}
+    for label, pattern in DESCRIPTION_TERMS.items():
+        hits = sorted({m.group(0).casefold() for m in re.finditer(pattern, description, re.I)})
+        if hits:
+            found[label] = hits
+    return found
+
+
+def classify_discipline(title: str, description: str = "") -> tuple[str, str]:
+    """(discipline, basis). Title first; generic engineering titles are read from the description.
+
+    Returns ("Other", why) only with an explanation the UI can show.
+    """
+    for label, pattern in DISCIPLINES:
+        if re.search(pattern, title, re.I):
+            return label, "title"
+    for pattern in (OTHER_DISCIPLINE_TITLE, NON_TECHNICAL_TITLE):
+        if pattern.search(title):
+            return "Other", f"Title names another field ({pattern.search(title)[0]})."
+    if not description.strip():
+        return "Other", "No electrical field in the title and no description to read yet."
+    evidence = _description_evidence(description)
+    # Two distinct terms in one field, or an explicit EE/ECE major requirement, is enough.
+    major = re.search(r"electrical(?: and computer)? engineering|computer engineering|\bECE\b|\bEE\b", description, re.I)
+    ranked = sorted(evidence.items(), key=lambda kv: (-len(kv[1]), list(DESCRIPTION_TERMS).index(kv[0])))
+    if ranked and (len(ranked[0][1]) >= 2 or (major and GENERIC_ENGINEERING.search(title))):
+        label, hits = ranked[0]
+        return label, "description: " + ", ".join(hits[:5])
+    if major and GENERIC_ENGINEERING.search(title):
+        return "Electrical", "description asks for " + major[0]
+    return "Other", "Neither the title nor the description shows electrical, embedded, hardware, FPGA, robotics/controls or power/RF work."
 
 
 def discipline(title: str, description="") -> str:
-    for label, pattern in DISCIPLINES:
-        if re.search(pattern, title, re.I):
-            return label
-    return "Other"
+    return classify_discipline(title, description)[0]
 
 
 def internship_terms(title: str, description: str) -> tuple[str, ...]:
@@ -123,11 +185,11 @@ def decide(job: Job, profile: Profile, filters: Filters, now: str) -> Decision:
     reasons = []
     if job.source_status == "closed" or (job.expires_at and datetime.fromisoformat(job.expires_at) < current):
         reasons.append("Closed or expired posting")
-    if not INTERNSHIP.search(job.title):
+    if not INTERNSHIP.search(job.title) and not re.search(r"\bintern(?:ship)?\b|\bco[ -]?op\b", job.employment_type, re.I):
         reasons.append("Not an internship or co-op")
-    field = discipline(job.title)
+    field, basis = classify_discipline(job.title, job.description)
     if field == "Other":
-        reasons.append("Unrelated discipline")
+        reasons.append("Unrelated discipline: " + basis)
     terms = internship_terms(job.title, job.description)
     if terms and not set(terms) & set(filters.terms):
         reasons.append("Outside requested internship term")

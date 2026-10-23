@@ -91,6 +91,9 @@ class Snapshot:
     complete: bool = True
     cached: bool = False
     warnings: tuple[str, ...] = ()
+    # Retrieval diagnostics: titles seen, kept, and every title rejected with its reason.
+    listed: int = 0
+    rejected: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

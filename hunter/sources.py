@@ -9,7 +9,7 @@ from urllib.parse import urlparse, parse_qs
 
 from bs4 import BeautifulSoup
 
-from .filtering import potential_title
+from .filtering import title_screen
 from .http import SourceError, supported_host
 from .models import Employer, Job, Snapshot, canonical_url, timestamp
 
@@ -155,12 +155,24 @@ def fetch_board(employer: Employer, client, max_details=60) -> Snapshot:
             return client.store.cache_get(detail_url) is not None
         # Previously unvisited descriptions take priority over repeat details.
         rows.sort(key=detail_cached)
-    jobs, details = [], 0
+        if source == "greenhouse":
+            # First scan of a large board: one ?content=true request seeds the detail cache instead
+            # of one request per posting (Zipline: 58 requests → 1). Later scans stay incremental.
+            pending = [r for r in rows if title_screen(r.get("title", "")) == "keep" and not detail_cached(r)]
+            if len(pending) >= 8:
+                bulk, bulk_checked = get(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true")
+                by_id = {str(j.get("id")): j for j in (bulk.get("jobs") or [])} if isinstance(bulk, dict) else {}
+                for r in pending:
+                    if str(r["id"]) in by_id:
+                        client.store.cache_set(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs/{r['id']}", by_id[str(r["id"])], bulk_checked)
+    jobs, details, rejected = [], 0, []
     for row in rows:
         if row.get("isListed") is False:
             continue
         title = row.get("title", row.get("text", row.get("name", "")))
-        if not potential_title(title):
+        verdict = title_screen(title)
+        if verdict != "keep":
+            rejected.append((title, verdict))
             continue
         job_checked = min(checks)
         if source in {"greenhouse", "smartrecruiters"}:
@@ -188,4 +200,4 @@ def fetch_board(employer: Employer, client, max_details=60) -> Snapshot:
         job = normalize(source, employer, row, job_checked)
         canonical_url(job.url)  # Validate before accepting any official link.
         jobs.append(job)
-    return Snapshot(tuple(jobs), frozenset(all_ids), min(checks), complete, any_cached, tuple(dict.fromkeys(warnings)))
+    return Snapshot(tuple(jobs), frozenset(all_ids), min(checks), complete, any_cached, tuple(dict.fromkeys(warnings)), len(rows), tuple(rejected))

@@ -222,5 +222,693 @@
     "career_url": "https://gevernova.wd5.myworkdayjobs.com/Vernova_ExternalSite",
     "enabled": true,
     "verified_at": "2026-10-20"
+  },
+  {
+    "name": "Skydio",
+    "source": "ashby",
+    "board": "skydio",
+    "career_url": "https://jobs.ashbyhq.com/skydio",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Zipline",
+    "source": "greenhouse",
+    "board": "flyzipline",
+    "career_url": "https://job-boards.greenhouse.io/flyzipline",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Archer Aviation",
+    "source": "greenhouse",
+    "board": "archer56",
+    "career_url": "https://job-boards.greenhouse.io/archer56",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Apex Space",
+    "source": "greenhouse",
+    "board": "apex",
+    "career_url": "https://job-boards.greenhouse.io/apex",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Varda Space Industries",
+    "source": "greenhouse",
+    "board": "vardaspace",
+    "career_url": "https://job-boards.greenhouse.io/vardaspace",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Planet Labs",
+    "source": "greenhouse",
+    "board": "planetlabs",
+    "career_url": "https://job-boards.greenhouse.io/planetlabs",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Muon Space",
+    "source": "greenhouse",
+    "board": "muonspace",
+    "career_url": "https://job-boards.greenhouse.io/muonspace",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "True Anomaly",
+    "source": "greenhouse",
+    "board": "trueanomalyinc",
+    "career_url": "https://job-boards.greenhouse.io/trueanomalyinc",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Chaos Industries",
+    "source": "greenhouse",
+    "board": "chaosindustries",
+    "career_url": "https://job-boards.greenhouse.io/chaosindustries",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Hermeus",
+    "source": "lever",
+    "board": "hermeus",
+    "career_url": "https://jobs.lever.co/hermeus",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Ursa Major",
+    "source": "greenhouse",
+    "board": "ursamajor",
+    "career_url": "https://job-boards.greenhouse.io/ursamajor",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Merlin Labs",
+    "source": "lever",
+    "board": "merlinlabs",
+    "career_url": "https://jobs.lever.co/merlinlabs",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Albedo",
+    "source": "greenhouse",
+    "board": "albedo",
+    "career_url": "https://job-boards.greenhouse.io/albedo",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Mach Industries",
+    "source": "greenhouse",
+    "board": "machindustries",
+    "career_url": "https://job-boards.greenhouse.io/machindustries",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "CX2",
+    "source": "lever",
+    "board": "cx2",
+    "career_url": "https://jobs.lever.co/cx2",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Picogrid",
+    "source": "ashby",
+    "board": "picogrid",
+    "career_url": "https://jobs.ashbyhq.com/picogrid",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Aeva",
+    "source": "lever",
+    "board": "aeva",
+    "career_url": "https://jobs.lever.co/aeva",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Agility Robotics",
+    "source": "greenhouse",
+    "board": "agilityrobotics",
+    "career_url": "https://job-boards.greenhouse.io/agilityrobotics",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Apptronik",
+    "source": "greenhouse",
+    "board": "apptronik",
+    "career_url": "https://job-boards.greenhouse.io/apptronik",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "1X Technologies",
+    "source": "ashby",
+    "board": "1x",
+    "career_url": "https://jobs.ashbyhq.com/1x",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Dexterity",
+    "source": "lever",
+    "board": "dexterity",
+    "career_url": "https://jobs.lever.co/dexterity",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Locus Robotics",
+    "source": "greenhouse",
+    "board": "locusrobotics",
+    "career_url": "https://job-boards.greenhouse.io/locusrobotics",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Kodiak Robotics",
+    "source": "greenhouse",
+    "board": "kodiak",
+    "career_url": "https://job-boards.greenhouse.io/kodiak",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Motional",
+    "source": "greenhouse",
+    "board": "motional",
+    "career_url": "https://job-boards.greenhouse.io/motional",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Torc Robotics",
+    "source": "greenhouse",
+    "board": "torcrobotics",
+    "career_url": "https://job-boards.greenhouse.io/torcrobotics",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Bright Machines",
+    "source": "lever",
+    "board": "brightmachines",
+    "career_url": "https://jobs.lever.co/brightmachines",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Path Robotics",
+    "source": "greenhouse",
+    "board": "pathrobotics",
+    "career_url": "https://job-boards.greenhouse.io/pathrobotics",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Formic",
+    "source": "greenhouse",
+    "board": "formic",
+    "career_url": "https://job-boards.greenhouse.io/formic",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Diligent Robotics",
+    "source": "greenhouse",
+    "board": "diligentrobotics",
+    "career_url": "https://job-boards.greenhouse.io/diligentrobotics",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Physical Intelligence",
+    "source": "ashby",
+    "board": "physicalintelligence",
+    "career_url": "https://jobs.ashbyhq.com/physicalintelligence",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Lucid Motors",
+    "source": "greenhouse",
+    "board": "lucidmotors",
+    "career_url": "https://job-boards.greenhouse.io/lucidmotors",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Form Energy",
+    "source": "ashby",
+    "board": "formenergy",
+    "career_url": "https://jobs.ashbyhq.com/formenergy",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Sila Nanotechnologies",
+    "source": "lever",
+    "board": "sila",
+    "career_url": "https://jobs.lever.co/sila",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Fervo Energy",
+    "source": "greenhouse",
+    "board": "fervoenergy",
+    "career_url": "https://job-boards.greenhouse.io/fervoenergy",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Commonwealth Fusion Systems",
+    "source": "lever",
+    "board": "cfsenergy",
+    "career_url": "https://jobs.lever.co/cfsenergy",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Helion Energy",
+    "source": "ashby",
+    "board": "helion",
+    "career_url": "https://jobs.ashbyhq.com/helion",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Oklo",
+    "source": "greenhouse",
+    "board": "oklo",
+    "career_url": "https://job-boards.greenhouse.io/oklo",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Kairos Power",
+    "source": "greenhouse",
+    "board": "kairospower",
+    "career_url": "https://job-boards.greenhouse.io/kairospower",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Radiant Nuclear",
+    "source": "ashby",
+    "board": "radiant",
+    "career_url": "https://jobs.ashbyhq.com/radiant",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Span",
+    "source": "ashby",
+    "board": "span",
+    "career_url": "https://jobs.ashbyhq.com/span",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Antora Energy",
+    "source": "greenhouse",
+    "board": "antora",
+    "career_url": "https://job-boards.greenhouse.io/antora",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Lunar Energy",
+    "source": "greenhouse",
+    "board": "lunarenergy",
+    "career_url": "https://job-boards.greenhouse.io/lunarenergy",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "ChargePoint",
+    "source": "greenhouse",
+    "board": "chargepoint",
+    "career_url": "https://job-boards.greenhouse.io/chargepoint",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Twelve",
+    "source": "ashby",
+    "board": "twelve",
+    "career_url": "https://jobs.ashbyhq.com/twelve",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Cerebras Systems",
+    "source": "ashby",
+    "board": "cerebras",
+    "career_url": "https://jobs.ashbyhq.com/cerebras",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "SambaNova Systems",
+    "source": "greenhouse",
+    "board": "sambanovasystems",
+    "career_url": "https://job-boards.greenhouse.io/sambanovasystems",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Tenstorrent",
+    "source": "greenhouse",
+    "board": "tenstorrent",
+    "career_url": "https://job-boards.greenhouse.io/tenstorrent",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Etched",
+    "source": "ashby",
+    "board": "etched",
+    "career_url": "https://jobs.ashbyhq.com/etched",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Lightmatter",
+    "source": "greenhouse",
+    "board": "lightmatter",
+    "career_url": "https://job-boards.greenhouse.io/lightmatter",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Astera Labs",
+    "source": "greenhouse",
+    "board": "asteralabs",
+    "career_url": "https://job-boards.greenhouse.io/asteralabs",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Eliyan",
+    "source": "lever",
+    "board": "eliyan",
+    "career_url": "https://jobs.lever.co/eliyan",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Rigetti Computing",
+    "source": "lever",
+    "board": "rigetti",
+    "career_url": "https://jobs.lever.co/rigetti",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "PsiQuantum",
+    "source": "greenhouse",
+    "board": "psiquantum",
+    "career_url": "https://job-boards.greenhouse.io/psiquantum",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Atom Computing",
+    "source": "lever",
+    "board": "atomcomputing",
+    "career_url": "https://jobs.lever.co/atomcomputing",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "MatX",
+    "source": "ashby",
+    "board": "matx",
+    "career_url": "https://jobs.ashbyhq.com/matx",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Extropic",
+    "source": "ashby",
+    "board": "extropic",
+    "career_url": "https://jobs.ashbyhq.com/extropic",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Butterfly Network",
+    "source": "greenhouse",
+    "board": "butterflynetwork",
+    "career_url": "https://job-boards.greenhouse.io/butterflynetwork",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Oura",
+    "source": "greenhouse",
+    "board": "oura",
+    "career_url": "https://job-boards.greenhouse.io/oura",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Whoop",
+    "source": "ashby",
+    "board": "whoop",
+    "career_url": "https://jobs.ashbyhq.com/whoop",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Eight Sleep",
+    "source": "ashby",
+    "board": "eightsleep",
+    "career_url": "https://jobs.ashbyhq.com/eightsleep",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Velo3D",
+    "source": "lever",
+    "board": "velo3d",
+    "career_url": "https://jobs.lever.co/velo3d",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Divergent",
+    "source": "greenhouse",
+    "board": "divergent",
+    "career_url": "https://job-boards.greenhouse.io/divergent",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Re-Build Manufacturing",
+    "source": "greenhouse",
+    "board": "rebuildmanufacturing",
+    "career_url": "https://job-boards.greenhouse.io/rebuildmanufacturing",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Tulip Interfaces",
+    "source": "greenhouse",
+    "board": "tulip",
+    "career_url": "https://job-boards.greenhouse.io/tulip",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Intel",
+    "source": "workday",
+    "board": "intel-wd1-External",
+    "career_url": "https://intel.wd1.myworkdayjobs.com/External",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Analog Devices",
+    "source": "workday",
+    "board": "analogdevices-wd1-External",
+    "career_url": "https://analogdevices.wd1.myworkdayjobs.com/External",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Marvell",
+    "source": "workday",
+    "board": "marvell-wd1-MarvellCareers",
+    "career_url": "https://marvell.wd1.myworkdayjobs.com/MarvellCareers",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Micron",
+    "source": "workday",
+    "board": "micron-wd1-External",
+    "career_url": "https://micron.wd1.myworkdayjobs.com/External",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "NXP Semiconductors",
+    "source": "workday",
+    "board": "nxp-wd3-careers",
+    "career_url": "https://nxp.wd3.myworkdayjobs.com/careers",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Applied Materials",
+    "source": "workday",
+    "board": "amat-wd1-External",
+    "career_url": "https://amat.wd1.myworkdayjobs.com/External",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "KLA",
+    "source": "workday",
+    "board": "kla-wd1-Search",
+    "career_url": "https://kla.wd1.myworkdayjobs.com/Search",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "GlobalFoundries",
+    "source": "workday",
+    "board": "globalfoundries-wd1-External",
+    "career_url": "https://globalfoundries.wd1.myworkdayjobs.com/External",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Cadence",
+    "source": "workday",
+    "board": "cadence-wd1-External_Careers",
+    "career_url": "https://cadence.wd1.myworkdayjobs.com/External_Careers",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Rockwell Automation",
+    "source": "workday",
+    "board": "rockwellautomation-wd1-External_Rockwell_Automation",
+    "career_url": "https://rockwellautomation.wd1.myworkdayjobs.com/External_Rockwell_Automation",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Medtronic",
+    "source": "workday",
+    "board": "medtronic-wd1-MedtronicCareers",
+    "career_url": "https://medtronic.wd1.myworkdayjobs.com/MedtronicCareers",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Stryker",
+    "source": "workday",
+    "board": "stryker-wd1-StrykerCareers",
+    "career_url": "https://stryker.wd1.myworkdayjobs.com/StrykerCareers",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "General Motors",
+    "source": "workday",
+    "board": "generalmotors-wd5-Careers_GM",
+    "career_url": "https://generalmotors.wd5.myworkdayjobs.com/Careers_GM",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Boeing",
+    "source": "workday",
+    "board": "boeing-wd1-EXTERNAL_CAREERS",
+    "career_url": "https://boeing.wd1.myworkdayjobs.com/EXTERNAL_CAREERS",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Leidos",
+    "source": "workday",
+    "board": "leidos-wd5-External",
+    "career_url": "https://leidos.wd5.myworkdayjobs.com/External",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Trimble",
+    "source": "workday",
+    "board": "trimble-wd1-TrimbleCareers",
+    "career_url": "https://trimble.wd1.myworkdayjobs.com/TrimbleCareers",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "GE Aerospace",
+    "source": "workday",
+    "board": "geaerospace-wd5-GE_ExternalSite",
+    "career_url": "https://geaerospace.wd5.myworkdayjobs.com/GE_ExternalSite",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Johnson Controls",
+    "source": "workday",
+    "board": "jci-wd5-JCI",
+    "career_url": "https://jci.wd5.myworkdayjobs.com/JCI",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Northrop Grumman",
+    "source": "workday",
+    "board": "ngc-wd1-Northrop_Grumman_External_Site",
+    "career_url": "https://ngc.wd1.myworkdayjobs.com/Northrop_Grumman_External_Site",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Ciena",
+    "source": "workday",
+    "board": "ciena-wd5-Careers",
+    "career_url": "https://ciena.wd5.myworkdayjobs.com/Careers",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Motorola Solutions",
+    "source": "workday",
+    "board": "motorolasolutions-wd5-Careers",
+    "career_url": "https://motorolasolutions.wd5.myworkdayjobs.com/Careers",
+    "enabled": true,
+    "verified_at": "2026-10-23"
+  },
+  {
+    "name": "Caterpillar",
+    "source": "workday",
+    "board": "cat-wd5-CaterpillarCareers",
+    "career_url": "https://cat.wd5.myworkdayjobs.com/CaterpillarCareers",
+    "enabled": true,
+    "verified_at": "2026-10-23"
   }
 ]

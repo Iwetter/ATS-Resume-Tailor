@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+import re
 
 import pandas as pd
 import streamlit as st
@@ -15,8 +16,31 @@ from ats.models import digest
 from .models import Employer, Filters, Profile, utcnow
 from .service import DEFAULT_DB, WATCHLIST, evaluate, scan
 from .sources import employer_from_url
-from .storage import STATUSES, Store
+from .storage import STATUSES, Store, verified_publication
 from .boards_ui import render_boards
+
+
+def render_diagnostics(last):
+    """Where every fetched listing went, so nothing is discarded without a visible reason."""
+    d = last["diagnostics"]
+    with st.expander(f"Discovery diagnostics: {d['listed']} listings fetched, {d['retained']} internships/co-ops kept, {d['eligible']} relevant", expanded=False):
+        reasons = d.get("decision_reasons", {})
+        st.dataframe(pd.DataFrame([
+            {"Stage": "Listings fetched from public boards", "Count": d["listed"]},
+            {"Stage": "Rejected: title is not an internship/co-op", "Count": d["rejected_not_internship"]},
+            {"Stage": "Rejected: internship in a non-technical field (title)", "Count": d["rejected_non_technical"]},
+            {"Stage": "Kept and stored (internship/co-op titles)", "Count": d["retained"]},
+            *[{"Stage": "Stored but not relevant: " + reason, "Count": count} for reason, count in sorted(reasons.items(), key=lambda kv: -kv[1])],
+            {"Stage": "Relevant (passes discipline, term, location and hard requirements)", "Count": d["eligible"]},
+            {"Stage": "Scored against your verified master", "Count": d["scored"]},
+        ]), hide_index=True, width="stretch")
+        st.caption("A job can fail more than one check, so the rejection rows can add up to more than the stored count.")
+        if last.get("title_rejections"):
+            st.markdown("**Internship titles rejected as non-technical**")
+            st.dataframe(pd.DataFrame(last["title_rejections"]), hide_index=True, width="stretch")
+        if last.get("decision_rejections"):
+            st.markdown("**Stored internships judged not relevant, with reasons** (they stay visible in All Discovered Jobs)")
+            st.dataframe(pd.DataFrame([{**r, "reasons": "; ".join(r["reasons"])} for r in last["decision_rejections"]]).drop(columns=["key"]), hide_index=True, width="stretch")
 
 
 def open_workspace(job=None):
@@ -141,15 +165,25 @@ def render():
         with st.expander("Actual scan coverage & source errors"):
             st.dataframe(pd.DataFrame(last["boards"]), hide_index=True)
             st.caption("Open means returned by an official public feed or structured job page at Last Checked. User-confirmed imports have a separate label. Availability can change after that timestamp. Failed/incomplete scans do not mark absent jobs closed. Cached data retains its original checked timestamp.")
+    if last and last.get("diagnostics"):
+        render_diagnostics(last)
     values = evaluate(store, master, profile, filters)
     if master is None:
         st.warning("No verified master is saved. Discovery works, but personalized fit scores and tailoring need your resume.")
-    recent = [x for x in values if x["decision"].eligible and x["confirmed_scope"] and x["decision"].recency == "recent"]
-    ca, cb, cc = st.columns(3)
-    ca.metric("Confirmed recent in target scope", len(recent))
-    cb.metric("Saved Jobs", sum(x["record"]["status"] == "Saved" for x in values))
-    cc.metric("Applied", sum(x["record"]["status"] == "Applied" for x in values))
-    view = st.radio("Opportunity view", ["Best Matches", "Recently Posted", "New Postings", "Imported jobs", "Posting date unknown", "Needs confirmation", "Older postings", "Saved Jobs", "Applied", "Rejected / Closed", "Tailored Resumes"], horizontal=True, key="hunter_view")
+    window = datetime.now(timezone.utc) - timedelta(days=days)
+    for x in values:
+        x["discovered_recent"] = x["record"]["discovered_at"] >= window.isoformat()
+        x["needs_verification"] = x["decision"].eligible and (x["job"].source_status != "open" or not x["confirmed_scope"] or any(f.status == "unknown" for f in x["decision"].flags))
+        x["kind"] = "Co-op" if re.search(r"co[ -]?op|cooperative", x["job"].title + " " + x["job"].employment_type, re.I) else "Internship"
+    eligible = [x for x in values if x["decision"].eligible and x["job"].source_status != "closed"]
+    ca, cb, cc, cd = st.columns(4)
+    ca.metric("Relevant open or unverified", len(eligible))
+    cb.metric("Newly published (verified date)", sum(x["decision"].recency == "recent" for x in eligible))
+    cc.metric("Saved Jobs", sum(x["record"]["status"] == "Saved" for x in values))
+    cd.metric("Applied", sum(x["record"]["status"] == "Applied" for x in values))
+    view = st.radio("Opportunity view", ["Best Matches", "All Discovered Jobs", "Newly Published", "Recently Discovered", "Needs Verification", "Saved", "Applied", "Rejected / Closed", "Imported jobs", "Tailored Resumes"],
+                    horizontal=True, key="hunter_view",
+                    help="Best Matches includes jobs whose publication date is unknown (Lever and Personio never publish one). Newly Published needs a verified first-publication date inside the window.")
     if view == "Tailored Resumes":
         artifacts = store.artifacts()
         if not artifacts:
@@ -166,42 +200,67 @@ def render():
                     else:
                         st.error("Saved artifact file is missing from the local data directory.")
         return
-    newest = set(last["new_ids"]) if last else set()
-    if view in {"Best Matches", "Recently Posted"}:
-        visible = recent
-    elif view == "New Postings":
-        visible = [x for x in values if x["record"]["key"] in newest and x["decision"].eligible]
+    if view == "Best Matches":
+        visible = [x for x in eligible if x["job"].source_status == "open" or x["job"].imported_at]
+    elif view == "All Discovered Jobs":
+        visible = list(values)
+    elif view == "Newly Published":
+        visible = [x for x in eligible if x["decision"].recency == "recent"]
+    elif view == "Recently Discovered":
+        visible = [x for x in eligible if x["discovered_recent"]]
     elif view == "Imported jobs":
         imported = {r["job_key"] for r in store.imports()}
         visible = [x for x in values if x["record"]["key"] in imported]
-    elif view == "Posting date unknown":
-        visible = [x for x in values if x["decision"].eligible and x["decision"].recency == "unknown"]
-    elif view == "Needs confirmation":
-        visible = [x for x in values if x["decision"].eligible and (not x["confirmed_scope"] or any(f.status == "unknown" for f in x["decision"].flags))]
-    elif view == "Older postings":
-        visible = [x for x in values if x["decision"].eligible and x["decision"].recency in {"older", "future"}]
-    elif view == "Saved Jobs":
+    elif view == "Needs Verification":
+        visible = [x for x in values if x["needs_verification"]]
+    elif view == "Saved":
         visible = [x for x in values if x["record"]["status"] == "Saved"]
     elif view == "Applied":
         visible = [x for x in values if x["record"]["status"] in {"Applied", "Interview"}]
     else:
-        visible = [x for x in values if not x["decision"].eligible or x["record"]["status"] in {"Rejected", "Withdrawn"}]
-    disciplines = st.multiselect("Discipline", sorted({x["decision"].discipline for x in values}))
-    sources = st.multiselect("Job source", sorted({x["job"].source for x in values}))
-    visible = [x for x in visible if not sources or x["job"].source in sources]
-    visible = [x for x in visible if (not disciplines or x["decision"].discipline in disciplines) and (x["match"] is None and minimum == 0 or x["match"] and x["match"]["fit"] >= minimum)]
-    order = st.selectbox("Sort opportunities by", ["Fit", "Recency", "Employer", "Location"], index=1 if view == "Recently Posted" else 0)
+        visible = [x for x in values if not x["decision"].eligible or x["job"].source_status == "closed" or x["record"]["status"] in {"Rejected", "Withdrawn"}]
+    with st.expander("Filters", expanded=False):
+        f1, f2, f3 = st.columns(3)
+        kinds = f1.multiselect("Type", ["Internship", "Co-op"])
+        disciplines = f2.multiselect("Engineering specialization", sorted({x["decision"].discipline for x in values}))
+        companies = f3.multiselect("Company", sorted({x["job"].company for x in values}))
+        f4, f5, f6 = st.columns(3)
+        place = f4.text_input("Location contains (state, city or Remote)")
+        dates = f5.selectbox("Publication", ["Any", "Verified within window", "Discovered within window", "Date unknown", "Older verified date"])
+        eligibility_filter = f6.selectbox("Eligibility", ["Any", "Eligible", "Eligible, needs verification", "Not eligible"])
+        f7, f8 = st.columns(2)
+        statuses = f7.multiselect("Application status", STATUSES)
+        sources = f8.multiselect("Job source", sorted({x["job"].source for x in values}))
+
+    def keep(x):
+        job, decision = x["job"], x["decision"]
+        checks = [not kinds or x["kind"] in kinds, not disciplines or decision.discipline in disciplines, not companies or job.company in companies,
+                  not place or place.casefold() in job.location.casefold(), not statuses or x["record"]["status"] in statuses, not sources or job.source in sources,
+                  {"Any": True, "Verified within window": decision.recency == "recent", "Discovered within window": x["discovered_recent"],
+                   "Date unknown": decision.recency == "unknown", "Older verified date": decision.recency in {"older", "future"}}[dates],
+                  {"Any": True, "Eligible": decision.eligible, "Eligible, needs verification": x["needs_verification"], "Not eligible": not decision.eligible}[eligibility_filter],
+                  minimum == 0 or (x["match"] is not None and x["match"]["fit"] >= minimum)]
+        return all(checks)
+    visible = [x for x in visible if keep(x)]
+    order = st.selectbox("Sort opportunities by", ["Fit", "Recency", "Employer", "Location"], index=1 if view in {"Newly Published", "Recently Discovered"} else 0)
     if order == "Fit":
         visible.sort(key=lambda x: (-(x["match"]["fit"] if x["match"] else -1), x["job"].company, x["job"].title))
     elif order == "Recency":
-        visible.sort(key=lambda x: x["job"].published_at or "", reverse=True)
+        visible.sort(key=lambda x: x["job"].published_at or x["record"]["discovered_at"] or "", reverse=True)
     else:
         visible.sort(key=lambda x: (x["job"].company if order == "Employer" else x["job"].location).casefold())
     if not visible:
-        st.info("No jobs meet this view and its filters. Check date-unknown/needs-confirmation views, broaden the publication window, or scan more employers.")
+        st.info("No jobs meet this view and its filters. Try All Discovered Jobs (shows the reason for every rejection), widen the window, or add employers.")
         return
-    rows = [{"Company": x["job"].company, "Title": x["job"].title, "Location": x["job"].location, "Source": x["job"].source, "Availability": x["job"].source_status, "Term": ", ".join(x["decision"].terms) or "Confirm term", "Published": x["job"].published_at or "Posting date unknown", "Date basis": x["job"].publication_basis, "Fit": x["match"]["fit"] if x["match"] else None, "Eligibility flags": sum(f.status == "unknown" for f in x["decision"].flags), "Status": x["record"]["status"]} for x in visible]
-    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    availability = {"open": "Confirmed open", "closed": "Confirmed closed", "user-confirmed": "Confirmed by you", "unknown": "Unknown"}
+    rows = [{"Company": x["job"].company, "Title": x["job"].title, "Type": x["kind"], "Specialization": x["decision"].discipline, "Location": x["job"].location, "Source": x["job"].source,
+             "Fit": x["match"]["fit"] if x["match"] else None,
+             "Eligibility": "Eligible" if x["decision"].eligible and not x["needs_verification"] else "Verify" if x["decision"].eligible else "No: " + "; ".join(x["decision"].reasons)[:90],
+             "Availability": availability.get(x["job"].source_status, x["job"].source_status) + f" ({str(x['record']['checked_at'] or '')[:10]})",
+             "Term": ", ".join(x["decision"].terms) or "Confirm term",
+             "Published": (x["job"].published_at or "")[:10] or "Unknown", "Date confidence": "verified first publication" if verified_publication(x["job"]) else x["job"].publication_basis,
+             "First discovered": str(x["record"]["discovered_at"])[:10], "Status": x["record"]["status"], "Apply": x["job"].url} for x in visible]
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch", column_config={"Apply": st.column_config.LinkColumn("Official page", display_text="Open")})
     st.caption("Fit is a reproducible internal estimate, not an employer ATS result or an interview probability. Unknown publication dates and first discovery never prove a job was newly posted.")
     keys = [x["record"]["key"] for x in visible]
     by_key = {x["record"]["key"]: x for x in visible}
