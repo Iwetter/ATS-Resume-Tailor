@@ -81,10 +81,11 @@ def normalize(source: str, employer: Employer, row: dict, checked: str) -> Job:
                    updated_at=timestamp(row.get("updatedAt")), checked_at=checked, compensation=compensation(row, description))
     if source == "ashby":
         description = row.get("descriptionPlain") or plain(row.get("descriptionHtml"))
-        primary = row.get("address", {}).get("postalAddress", row.get("address", {})) or {}
-        secondary = row.get("secondaryLocations") or []
-        countries = [primary.get("addressCountry", "")] + [x.get("address", {}).get("addressCountry", "") for x in secondary]
-        return Job(source, employer.board, str(row["id"]), employer.name, row["title"], "; ".join([row.get("location", "")] + [x.get("location", "") for x in secondary]), row.get("jobUrl") or row["applyUrl"], description,
+        address = row.get("address") or {}  # Ashby sends "address": null for some postings
+        primary = address.get("postalAddress") or address
+        secondary = [x for x in (row.get("secondaryLocations") or []) if isinstance(x, dict)]
+        countries = [primary.get("addressCountry", "")] + [((x.get("address") or {}).get("postalAddress") or x.get("address") or {}).get("addressCountry", "") for x in secondary]
+        return Job(source, employer.board, str(row["id"]), employer.name, row["title"], "; ".join([row.get("location") or ""] + [x.get("location") or "" for x in secondary]), row.get("jobUrl") or row["applyUrl"], description,
                    country=";".join(dict.fromkeys(x for x in countries if x)), employment_type=row.get("employmentType", ""), published_at=timestamp(row.get("publishedAt")),
                    publication_basis="Ashby publishedAt (last published)" if row.get("publishedAt") else "Posting date unknown", checked_at=checked,
                    source_status="open" if row.get("isListed", True) else "closed", compensation=compensation(row, description))
@@ -160,7 +161,11 @@ def fetch_board(employer: Employer, client, max_details=60) -> Snapshot:
             # of one request per posting (Zipline: 58 requests → 1). Later scans stay incremental.
             pending = [r for r in rows if title_screen(r.get("title", "")) == "keep" and not detail_cached(r)]
             if len(pending) >= 8:
-                bulk, bulk_checked = get(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true")
+                try:
+                    bulk, bulk_checked = get(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true")
+                except SourceError as exc:  # very large boards: fall back to per-posting details
+                    bulk, bulk_checked = None, None
+                    warnings.append(f"Bulk description download skipped ({exc}); details are fetched one by one.")
                 by_id = {str(j.get("id")): j for j in (bulk.get("jobs") or [])} if isinstance(bulk, dict) else {}
                 for r in pending:
                     if str(r["id"]) in by_id:

@@ -34,6 +34,11 @@ def supported_host(host):
 DETAIL_PATH = re.compile(r"/v1/boards/[^/]+/jobs/[^/?]+$|/v1/companies/[^/]+/postings/[^/?]+$|/job/")
 
 
+# Job-posting APIs their providers document for public use, whose robots.txt answers 401/403
+# (no published policy). Everything else stays conservative: any non-200/404/410 skips the source.
+DOCUMENTED_PUBLIC_APIS = {"api.ashbyhq.com"}  # https://developers.ashbyhq.com/docs/public-job-posting-api
+
+
 class PublicClient:
     """``ttl`` applies to listings/feeds; ``detail_ttl`` to per-job detail pages.
 
@@ -87,6 +92,8 @@ class PublicClient:
             else:
                 status, raw, _ = self._get("https://" + host + "/robots.txt", max_bytes=512000)
                 text = raw.decode("utf-8", errors="replace")
+                if status in {401, 403} and host in DOCUMENTED_PUBLIC_APIS:
+                    status = 404  # RFC 9309 2.3.1.3: a 4xx robots.txt publishes no restrictions
                 if status not in {200, 404, 410}:
                     raise SourceError(f"robots.txt could not be confirmed (HTTP {status}); source skipped.")
                 self.store.cache_set(key, {"status": status, "text": text}, utcnow())

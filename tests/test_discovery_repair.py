@@ -119,3 +119,69 @@ def test_hunter_views_show_unknown_date_jobs_and_diagnostics(tmp_path):
     everything = app.dataframe[-1].value
     assert set(everything["Title"]) == {"Engineering Intern", "Mechanical Engineering Intern"}
     assert everything.set_index("Title").loc["Mechanical Engineering Intern", "Eligibility"].startswith("No: Unrelated discipline")
+
+
+# ---- bugs found by the live scan (October 23, 2026) ------------------------------
+
+def test_ashby_posting_with_null_address_is_normalized():
+    from hunter.sources import normalize
+    row = {"id": "a1", "title": "Hardware Intern", "location": None, "address": None, "secondaryLocations": [{"location": "Austin, TX", "address": None}],
+           "jobUrl": "https://jobs.ashbyhq.com/acme/a1", "descriptionPlain": EE_DESCRIPTION, "publishedAt": "2026-10-20T00:00:00Z"}
+    job = normalize("ashby", Employer("Acme", "ashby", "acme", "https://jobs.ashbyhq.com/acme"), row, NOW)
+    assert job.title == "Hardware Intern" and "Austin, TX" in job.location
+
+
+def test_one_malformed_board_never_stops_the_scan(tmp_path, monkeypatch):
+    store = Store(tmp_path / "hunter.sqlite3")
+    good = Employer("Good", "greenhouse", "good", "https://job-boards.greenhouse.io/good")
+    bad = Employer("Bad", "greenhouse", "bad", "https://job-boards.greenhouse.io/bad")
+
+    def fetch(employer, client):
+        if employer.board == "bad":
+            None.get("address")  # the AttributeError a malformed posting used to raise
+        return Snapshot((job("Engineering Intern"),), frozenset({"1"}), NOW, listed=1)
+    monkeypatch.setattr("hunter.service.fetch_board", fetch)
+    result = scan(store, [bad, good], None, Profile(), Filters(), client=object())
+    assert [b["success"] for b in result["boards"]] == [False, True] and result["diagnostics"]["eligible"] == 1
+
+
+def test_documented_public_api_robots_401_is_treated_as_no_policy(tmp_path):
+    from hunter.http import PublicClient
+
+    class Session:
+        def get(self, url, **kwargs):
+            class Response:
+                status_code = 401 if url.endswith("robots.txt") else 200
+                headers = {"Content-Type": "application/json"}
+                def iter_content(self, size): yield b'{"jobs": []}' if not url.endswith("robots.txt") else b"denied"
+                def __enter__(self): return self
+                def __exit__(self, *a): return False
+            return Response()
+    client = PublicClient(Store(tmp_path / "h.sqlite3"), session=Session(), sleep=lambda s: None)
+    assert client.json("https://api.ashbyhq.com/posting-api/job-board/acme")[0] == {"jobs": []}
+    from hunter.http import SourceError
+    with pytest.raises(SourceError, match="robots.txt could not be confirmed"):
+        client.json("https://api.lever.co/v0/postings/acme?mode=json")  # the same 401 on any other host is still skipped
+
+
+def test_greenhouse_bulk_download_failure_falls_back_to_details(tmp_path):
+    from hunter.http import SourceError
+    from hunter.sources import fetch_board
+    store = Store(tmp_path / "h.sqlite3")
+    rows = [{"id": n, "title": f"Engineering Intern {n}"} for n in range(10)]
+
+    class Client:
+        def __init__(self):
+            self.store, self.details = store, 0
+        def json(self, url, force=False):
+            if url.endswith("/jobs"):
+                return {"jobs": rows, "meta": {"total": 10}}, NOW, False
+            if "content=true" in url:
+                raise SourceError("Source response exceeds the bounded download size.")
+            self.details += 1
+            n = url.rsplit("/", 1)[-1]
+            return {"id": int(n), "title": f"Engineering Intern {n}", "content": EE_DESCRIPTION, "location": {"name": "Atlanta, GA"},
+                    "absolute_url": f"https://job-boards.greenhouse.io/acme/jobs/{n}"}, NOW, False
+    client = Client()
+    snap = fetch_board(Employer("Acme", "greenhouse", "acme", "https://job-boards.greenhouse.io/acme"), client)
+    assert len(snap.jobs) == 10 and client.details == 10 and any("Bulk description download skipped" in w for w in snap.warnings)

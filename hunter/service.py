@@ -159,7 +159,7 @@ def scan(store, employers=None, master=None, profile=None, filters=None, client=
                     store.close_absent(employer, snapshot.all_ids, snapshot.checked_at)
                 result["boards"].append({"employer": employer.name, "source": employer.source, "board": employer.board, "success": True, "total_public_jobs": len(snapshot.all_ids), "engineering_internships": len(snapshot.jobs), "new": new, "checked_at": snapshot.checked_at, "cached": snapshot.cached, "complete": snapshot.complete, "warnings": list(snapshot.warnings),
                                          "listed": snapshot.listed, "title_rejected": len(snapshot.rejected)})
-            except (SourceError, KeyError, TypeError, ValueError) as exc:
+            except (SourceError, KeyError, TypeError, ValueError, AttributeError) as exc:  # one malformed board never stops the scan
                 result["boards"].append({"employer": employer.name, "source": employer.source, "board": employer.board, "success": False, "error": str(exc), "rate_limited": isinstance(exc, RateLimited), "retry_after": getattr(exc, "retry_after", None)})
         result["finished"] = utcnow()
         result["diagnostics"] = diag

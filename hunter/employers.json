@@ -902,13 +902,5 @@
     "career_url": "https://motorolasolutions.wd5.myworkdayjobs.com/Careers",
     "enabled": true,
     "verified_at": "2026-10-23"
-  },
-  {
-    "name": "Caterpillar",
-    "source": "workday",
-    "board": "cat-wd5-CaterpillarCareers",
-    "career_url": "https://cat.wd5.myworkdayjobs.com/CaterpillarCareers",
-    "enabled": true,
-    "verified_at": "2026-10-23"
   }
 ]
