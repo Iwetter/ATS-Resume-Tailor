@@ -19,6 +19,7 @@ PII = ("Alex", "alex@example.com", "555-0100", "fixture-auth-token")
 def setup(tmp_path, master, monkeypatch, **settings):
     env = SmsEnv(tmp_path, master, **settings)
     env.store.set("expanded_boards_v2", True)
+    env.store.set("expanded_boards_v3", True)
     env.store.set("employers", [dict(name="Fixture Co", source="greenhouse", board="fixtureco", career_url="https://job-boards.greenhouse.io/fixtureco",
                                      enabled=True, verified_at=None)])
     env.verify_phone()

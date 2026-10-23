@@ -182,6 +182,7 @@ def test_sms_outage_never_breaks_the_worker(env, monkeypatch):
     from autoapply.worker import Worker
     from unittest.mock import Mock
     env.store.set("expanded_boards_v2", True)
+    env.store.set("expanded_boards_v3", True)
     env.store.set("employers", [])
     worker = Worker(env.settings, env.store, env.engine, client_factory=lambda: Mock(requests=0, cache_hits=0), notifier=Notifier(env.engine, env.sms))
     env.ready_application()

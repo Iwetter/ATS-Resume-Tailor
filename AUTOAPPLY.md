@@ -107,6 +107,23 @@ Twilio's own keywords still work: `STOP` opts your number out (Auto Apply also p
 
 **Control panel** (Auto Apply → SMS & phone, stored in the database): verified phone number, SMS on/off, immediate alerts vs daily summary only, notification categories, summary hour and time zone, permission mode, minimum fit scores, daily and per-company limits, a test-SMS button and the recent message log. Saved fit/limit values override the environment defaults within the same bounds, and take effect on the worker's next cycle without a restart. `AUTOAPPLY_ALLOW_REAL_SUBMISSION` and the emergency stop can never be changed from the dashboard or by SMS.
 
+## Before real submissions: profile verification checklist
+
+Real submission stays off until **you** set `AUTOAPPLY_ALLOW_REAL_SUBMISSION=true`. Before that, confirm each item yourself; the app does not fill any of them in for you.
+
+- [ ] **Master resume:** your current DOCX uploaded and saved in Find Internships → Verified master resume. Its extracted text matches the document.
+- [ ] **Profile facts** (Settings → Applicant profile) match the master and your records: name, email, phone, city/state; Georgia Tech; B.S. Electrical Engineering, concentration Robotics & Automated Systems; expected graduation **2028-05**; GPA **3.68**, checked against the master.
+- [ ] **Work eligibility:** U.S. citizen Yes · authorized to work in the U.S. Yes · visa sponsorship needed No.
+- [ ] **Availability:** Summer 2027 if true. Add **Spring 2027 only with an explicit earliest start date you have confirmed**; January 2027 is never assumed.
+- [ ] **Answer bank:** recurring questions answered and marked verified (how you heard about the job, degree as each employer lists it, e.g. "Bachelor's Degree").
+- [ ] **Employers:** only employers whose career site and ATS terms you reviewed have *prepare forms*; *auto-submit* only where you want Full Autopilot.
+- [ ] **REVIEW-mode run:** at least three real Greenhouse/Lever postings prepared in Approval Required mode; screenshots, answers and the tailored PDF inspected.
+- [ ] **Limits:** daily and per-company limits set (Notifications → limits); Full Autopilot minimum fit (default 80) is a heuristic, not proof of qualification.
+- [ ] **Phone:** SMS test received; `STATUS` and `PAUSE` tried by text.
+- [ ] **Dry run** passed within 7 days before typing `ENABLE AUTO`.
+
+Note: the Greenhouse and Lever pages checked live load invisible CAPTCHAs, so most real applications on those boards end at "Needs Human Action" with everything prepared for you to submit yourself.
+
 ## First-time setup
 
 1. **Install** (Python 3.11+). On Windows, keep the virtual environment in a short path (e.g. `C:\aa\.venv`): lxml fails to load from paths over 260 characters.

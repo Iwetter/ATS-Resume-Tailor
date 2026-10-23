@@ -77,3 +77,38 @@ Real submission stayed disabled throughout development: the autouse fixture remo
 - **No real Twilio traffic:** set up the number (A2P 10DLC or toll-free verification), then use **Send test SMS** and text `STATUS`.
 - **Caddy's certificate issuance** needs a real DNS name pointed at the VM.
 - The live adapter check was read-only on one page per ATS; option lists and filling were verified against fixtures that copy the live DOM, not by typing into real employer forms.
+
+
+---
+
+# Repair milestones A–E (October 23, 2026, Windows 11, local checkout)
+
+Branch `feature/ats-hunter-complete`, built from GitHub `main` + `autoapply.patch` (tree identical to the ZIP) + SMS commit + milestone commits.
+
+## Automated result
+
+**347 passed, 0 failed, 0 skipped** (`python -m pytest -q -rs --basetemp=%TEMP%apt`, 4 min 14 s, Playwright Chromium and Microsoft Word present, so every browser and DOCX→PDF test ran). Pytest's fault handler prints two "Windows fatal exception 0x800706ba/be" stack dumps during the Word tests: these are COM RPC exceptions raised and handled inside Word's shutdown, not failures.
+
+| New file | Tests | Covers |
+| --- | --- | --- |
+| `test_discovery_repair.py` | 47 | Titles the old filter dropped are retrieved and classified from the description; non-technical and other-field titles rejected with reasons (incl. live false positives); unknown publication date never rejects; co-op in employment type; per-stage scan diagnostics; Greenhouse adapter keeps generic titles; Hunter views show unknown-date jobs and diagnostics; Ashby null address; one bad board never stops a scan; Ashby robots 401 accepted only for that documented API; bulk-download fallback; one-time watchlist upgrade keeps user choices |
+| `test_tailoring_docx.py` | 14 | Meaningful rewrite accepted with risk flags; unsupported stage/tool/number/leadership/completion claims rejected; assisted qualifier kept; evidence library; every line mapped to its paragraph; in-place edits keep style, fonts, sizes, margins and bold lead-ins (incl. leading-space labels from a real resume); omitted projects removed, kept ones reordered; result is genuinely reworded; unmatched lines reported; Word render is one page with all text extractable |
+| `test_workspaces.py` | 8 | Every workspace renders (Dashboard, Find Internships, Resume Grader & Tailor, Auto Apply, Applications, Notifications, Settings); dashboard shows real state and navigates |
+
+## Live discovery (permitted public sources, read-only)
+
+108/108 employer boards checked, 33,897 public listings, 923 internship/co-op titles kept, **222 relevant** (EE/embedded/hardware/FPGA/robotics/power, Spring/Summer 2027, U.S., no unmet hard requirement), of which **112 the previous title filter would have discarded** (e.g. Astranis Avionics, Antenna, GNC, Harness Design interns; Ciena FPGA/ASIC co-op; Anduril 2027 Electrical Engineer Intern). Board verification: 93 of 192 researched candidates had a working public board and were added (28 → 113 boards after removing Caterpillar, whose robots.txt disallows its feed). Bugs found and fixed through the live run: Ashby robots 401, Ashby null addresses aborting the scan, oversized Greenhouse bulk responses. Report: `tools/discovery_report.py` (local output in `data/demo/`, git-ignored).
+
+## Tailoring demonstration (real master DOCX, real posting)
+
+A recent personal DOCX resume was tailored to Anduril's live "2027 Electrical Engineer Intern" posting with `tools/tailoring_demo.py`. No Anthropic API key is configured on this PC, so the six rewrite proposals were written by Claude in the development session using the app's JSON format, then processed by the real pipeline: 5 accepted with specific risk flags, 1 deliberate overreach ("fabricated … production-ready") rejected; 49/49 lines mapped, 8 lines reworded, projects and skills reordered for the job, rendered by Word to **one page with 0 formatting changes**; side-by-side render visually identical in layout. The fit estimate stayed 55.2 → 55.2: it measures evidence, which rewording does not add. **A live Claude API call has not been made.**
+
+## Real submission
+
+Remained disabled throughout. Mocked forms and the fixture router only; no SMS sent; no public service deployed.
+
+## Not verified
+
+- Live Claude rewriting (needs your API key, model and prices).
+- `docker compose build` and the LibreOffice converter inside the image (no Docker on this PC).
+- Any real employer form beyond read-only inspection; real CAPTCHAs make most Greenhouse/Lever applications manual.

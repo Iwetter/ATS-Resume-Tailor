@@ -29,7 +29,7 @@ def test_hunter_dashboard_tailoring_and_persistent_status(tmp_path, master, monk
     app = AppTest.from_file(str(APP), default_timeout=40)
     app.session_state["hunter_db_path"] = str(store.path)
     app.run()
-    app.radio(key="workspace_page").set_value("Internship Hunter").run()
+    app.radio(key="workspace_page").set_value("Find Internships").run()
     assert not app.exception
     assert any("Original resume fit" in m.label for m in app.metric)
     next(s for s in app.selectbox if s.label == "Application status").set_value("Applied").run()
@@ -49,7 +49,7 @@ def test_hunter_dashboard_tailoring_and_persistent_status(tmp_path, master, monk
     metadata = json.loads(store.artifacts()[0]["metadata"])
     assert metadata["original_fit_estimate"] is not None and metadata["tailored_fit_estimate"] is not None
     assert not metadata["approved_change_ids"]  # No fabricated rewrite or gain.
-    app.radio(key="workspace_page").set_value("Internship Hunter").run()
+    app.radio(key="workspace_page").set_value("Find Internships").run()
     next(r for r in app.radio if r.label == "Opportunity view").set_value("Tailored Resumes").run()
     assert not app.exception
     assert any(x.proto.label == "Download PDF" for x in app.get("download_button"))
@@ -64,8 +64,9 @@ def test_hunter_without_master_does_not_score_demo_or_call_network(tmp_path, mon
     app = AppTest.from_file(str(APP), default_timeout=30)
     app.session_state["hunter_db_path"] = str(tmp_path / "hunter.sqlite3")
     app.run()
+    app.radio(key="workspace_page").set_value("Resume Grader & Tailor").run()  # Dashboard is now the landing page
     button(app, "Use fictional test resume").click().run()
-    app.radio(key="workspace_page").set_value("Internship Hunter").run()
+    app.radio(key="workspace_page").set_value("Find Internships").run()
     assert not app.exception
     assert any("No verified master" in w.value for w in app.warning)
     assert not any(b.label == "Save verified master for Hunter" for b in app.button)

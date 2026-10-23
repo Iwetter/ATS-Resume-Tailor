@@ -177,8 +177,10 @@ def docx_to_pdf(docx_bytes: bytes, timeout=120) -> tuple[bytes | None, str]:
                     document = word.Documents.Open(str(source), ReadOnly=True, AddToRecentFiles=False, Visible=False)
                     document.SaveAs2(str(target), FileFormat=17)  # wdFormatPDF
                     document.Close(False)
+                    del document  # release the COM proxy while Word is still running
                 finally:
                     word.Quit()
+                    del word
                 if target.is_file():
                     return target.read_bytes(), "Microsoft Word"
             except Exception as exc:  # Word missing, licensing dialog, COM error

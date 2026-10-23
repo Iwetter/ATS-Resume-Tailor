@@ -17,6 +17,7 @@ from ats.rewriting import (ModelConfig, apply_changes, parse_changes, rewrite_re
 from ats.scoring import DEFAULT_WEIGHTS, analyze
 
 ROOT = Path(__file__).parent
+WORKSPACES = ["Dashboard", "Find Internships", "Resume Grader & Tailor", "Auto Apply", "Applications", "Notifications", "Settings"]
 JOB_URL = "https://jobs.smartrecruiters.com/WesternDigital/744000140949875-summer-2027-intern-hardware-engineering"
 st.set_page_config(page_title="Resume Bench | ATS Grader & Tailor", page_icon="📄", layout="wide")
 st.markdown("""<style>
@@ -80,6 +81,8 @@ def diagnostics(result, resume, requirements):
             st.write("Review the evidence table and eligibility conditions before applying.")
 
 
+if st.session_state.get("navigate_to"):
+    st.session_state.workspace_page = st.session_state.pop("navigate_to")
 if st.session_state.pop("hunter_navigate", False):
     st.session_state.workspace_page = "Resume Grader & Tailor"
     pending = st.session_state.pop("hunter_pending_job", None)
@@ -93,7 +96,7 @@ if st.session_state.pop("hunter_navigate", False):
 
 with st.sidebar:
     st.markdown("### Resume Bench")
-    workspace_page = st.radio("Workspace", ["Resume Grader & Tailor", "Internship Hunter", "Auto Apply"], key="workspace_page")
+    workspace_page = st.radio("Workspace", WORKSPACES, key="workspace_page")
     st.caption("EVIDENCE FIRST · ENGINEERING INTERNSHIPS")
     st.write("1. Verify extraction\n\n2. Analyze evidence\n\n3. Review tailoring\n\n4. Validate & download")
     st.divider()
@@ -127,9 +130,17 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-if workspace_page == "Internship Hunter":
+if workspace_page == "Dashboard":
+    from dashboard import render as render_dashboard
+    render_dashboard()
+    st.stop()
+if workspace_page == "Find Internships":
     from hunter.ui import render
     render()
+    st.stop()
+if workspace_page in ("Applications", "Notifications", "Settings"):
+    from autoapply.ui import render_section
+    render_section(workspace_page)
     st.stop()
 if workspace_page == "Auto Apply":
     from autoapply.ui import render as render_auto

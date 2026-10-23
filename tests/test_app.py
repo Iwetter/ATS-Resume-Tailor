@@ -19,6 +19,7 @@ def area(app, label):
 
 def loaded_app():
     app = AppTest.from_file(str(APP), default_timeout=30).run()
+    app.radio(key="workspace_page").set_value("Resume Grader & Tailor").run()
     button(app, "Use fictional test resume").click().run()
     button(app, "Use saved Western Digital example").click().run()
     assert not app.exception

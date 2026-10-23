@@ -52,6 +52,38 @@ def _engine():
     return Engine(store, settings), settings, store
 
 
+def render_section(name):
+    """One focused workspace (Applications, Notifications, Settings) built from the same sections as Auto Apply."""
+    engine, settings, store = _engine()
+    auto = engine.auto
+    if engine.stopped():
+        st.error("EMERGENCY STOP ACTIVE — no application step will run.")
+    st.markdown(f'<div class="eyebrow">RESUME BENCH / {name.upper()}</div>', unsafe_allow_html=True)
+    if name == "Applications":
+        st.title("Applications")
+        tabs = st.tabs(["In progress & approval", "Submitted", "Needs you / blocked"])
+        with tabs[0]:
+            _queue(engine, store, auto, [S.READY, S.APPROVED, S.QUEUED, S.PREPARING, S.SUBMITTING], "queue")
+        with tabs[1]:
+            _submitted(auto)
+        with tabs[2]:
+            _queue(engine, store, auto, [S.NEEDS_HUMAN, S.UNKNOWN, S.FAILED, S.BLOCKED, S.SKIPPED, S.CANCELLED], "blocked")
+    elif name == "Notifications":
+        st.title("Notifications")
+        _sms(engine, store, auto)
+    else:
+        st.title("Settings")
+        tabs = st.tabs(["Applicant profile", "Employers & sites", "Claude API usage", "Audit log"])
+        with tabs[0]:
+            _profile(engine, store, auto)
+        with tabs[1]:
+            _employers(store, auto)
+        with tabs[2]:
+            _usage(engine, settings, auto)
+        with tabs[3]:
+            _audit(auto)
+
+
 def render():
     engine, settings, store = _engine()
     auto = engine.auto

@@ -12,7 +12,8 @@ from hunter.models import Employer, Snapshot, utcnow
 
 
 def employers(store, *rows):
-    store.set("expanded_boards_v2", True)  # skip Hunter's one-time shipped-board merge
+    store.set("expanded_boards_v2", True)  # skip Hunter's one-time shipped-board merges
+    store.set("expanded_boards_v3", True)
     store.set("employers", [dict(name=n, source=s, board=b, career_url=u, enabled=True, verified_at=None) for n, s, b, u in rows])
 
 

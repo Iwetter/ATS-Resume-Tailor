@@ -113,7 +113,7 @@ def test_hunter_views_show_unknown_date_jobs_and_diagnostics(tmp_path):
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=60)
     app.session_state["hunter_db_path"] = str(store.path)
     app.run()
-    app.radio(key="workspace_page").set_value("Internship Hunter").run()
+    app.radio(key="workspace_page").set_value("Find Internships").run()
     assert not app.exception, app.exception
     best = app.dataframe[-1].value
     assert list(best["Title"]) == ["Engineering Intern"] and best["Published"][0] == "Unknown"
@@ -188,3 +188,16 @@ def test_greenhouse_bulk_download_failure_falls_back_to_details(tmp_path):
     client = Client()
     snap = fetch_board(Employer("Acme", "greenhouse", "acme", "https://job-boards.greenhouse.io/acme"), client)
     assert len(snap.jobs) == 10 and client.details == 10 and any("Bulk description download skipped" in w for w in snap.warnings)
+
+
+def test_new_shipped_boards_are_added_once_without_resetting_user_choices(tmp_path):
+    from hunter.service import WATCHLIST
+    store = Store(tmp_path / "h.sqlite3")
+    store.set("expanded_boards_v2", True)
+    store.set("employers", [{"name": "My renamed Anduril", "source": "greenhouse", "board": "andurilindustries",
+                             "career_url": "https://job-boards.greenhouse.io/andurilindustries", "enabled": False, "verified_at": None}])
+    boards = store.employers(WATCHLIST)
+    assert len(boards) > 100 and boards[0].name == "My renamed Anduril" and boards[0].enabled is False
+    rows = store.get("employers")
+    store.set("employers", rows[:3])  # the user later removes boards: they are not re-added
+    assert len(store.employers(WATCHLIST)) == 3

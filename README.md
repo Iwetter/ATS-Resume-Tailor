@@ -41,7 +41,7 @@ Upload a resume or choose the clearly labeled fictional demo, then supply a job 
 
 Scores are documented heuristics, not employer ATS results or hiring predictions. Job-source coverage and dates vary. Applications are submitted only through Auto Apply's guarded flow, which is off until you enable real submission on your server. This repository excludes resumes, application records, the populated local database, and scan history.
 
-See the [user guide](USER_GUIDE.md), [Auto Apply guide](AUTOAPPLY.md), [source coverage](SOURCES.md), and [local scheduling notes](SCHEDULING.md).
+**Windows:** see [WINDOWS_SETUP.md](WINDOWS_SETUP.md) for exact setup and run commands. See the [user guide](USER_GUIDE.md), [Auto Apply guide](AUTOAPPLY.md), [source coverage](SOURCES.md), and [local scheduling notes](SCHEDULING.md).
 
 Run everything in containers on a persistent VM with `cp .env.example .env && docker compose up -d --build` (details in AUTOAPPLY.md).
 

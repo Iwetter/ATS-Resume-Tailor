@@ -235,7 +235,7 @@ def test_imported_listing_ui_confirmation_scoring_and_phase1_handoff(tmp_path, m
     monkeypatch.setattr(requests, "post", network)
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=40)
     app.session_state["hunter_db_path"] = str(store.path)
-    app.run().radio(key="workspace_page").set_value("Internship Hunter").run()
+    app.run().radio(key="workspace_page").set_value("Find Internships").run()
     fields = {"Listing URL": "https://www.indeed.com/viewjob?jk=fixture", "Listing employer": "Fixture Engineering",
               "Exact listing title": "Hardware Engineering Intern Summer 2027", "Listing location": "Atlanta, GA, United States"}
     for label, text in fields.items(): next(x for x in app.text_input if x.label == label).set_value(text)
