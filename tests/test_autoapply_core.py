@@ -201,9 +201,9 @@ def test_unverified_conditions_block_auto_but_allow_review(master, verified_prof
 
 def test_fit_thresholds_and_permissions(master, verified_profile, settings):
     from autoapply import config
-    strict = config.load(db_path=settings.db_path, min_fit_review=95.0, min_fit_auto=99.0)
+    strict = config.load(db_path=settings.db_path, min_fit_review=99.5, min_fit_auto=99.8)  # above the fixture's fit
     assert not gate_for(aa_job(), verified_profile, master, strict).prepare_ok
-    middle = config.load(db_path=settings.db_path, min_fit_review=20.0, min_fit_auto=99.0)
+    middle = config.load(db_path=settings.db_path, min_fit_review=20.0, min_fit_auto=99.8)
     g = gate_for(aa_job(), verified_profile, master, middle)
     assert g.prepare_ok and not g.auto_ok
     g = gate_for(aa_job(), verified_profile, master, settings, permission={"prefill": True, "auto_submit": False})

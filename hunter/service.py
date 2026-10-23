@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # HUNTER_DB lets a container keep the database on a persistent volume.
 DEFAULT_DB = Path(os.environ.get("HUNTER_DB") or ROOT / "data" / "hunter.sqlite3")
 WATCHLIST = ROOT / "hunter" / "employers.json"
-SCORING_VERSION = "hunter-1"
+SCORING_VERSION = "hunter-2-terminology"  # bump: cached scores recompute after matching changes
 
 
 def profile_from_master(profile, master):
@@ -89,6 +89,11 @@ def score_job(job: Job, master, store=None):
     result = {"fit": fit, "components": components, "details": details,
               "matched_skills": sorted({t for d in skills if d["status"] == "supported" for t in d["requirement"]["terms"]}),
               "missing": sorted({" / ".join(d["requirement"]["terms"]) or d["requirement"]["text"] for d in details if d["status"] == "missing"}),
+              # The resume can only show what is on it: these are not "skills you lack".
+              "not_on_resume": sorted({" / ".join(d["requirement"]["terms"]) for d in details if d["requirement"]["kind"] == "skill" and d["status"] == "missing"}),
+              "listed_not_demonstrated": sorted({" / ".join(d["requirement"]["terms"]) for d in details if d["requirement"]["kind"] == "skill" and d["status"] == "partial"}),
+              "duties_not_shown": sorted({d["requirement"]["text"][:140] for d in details if d["requirement"]["kind"] == "responsibility" and d["status"] == "missing"}),
+              "component_notes": component_notes(details, preferred_matches),
               "representation": round(100*sum(d["status"] == "supported" for d in mentioned)/len(mentioned), 1) if mentioned else 0,
               "strongest_evidence": [{"id": eid, "text": master.by_id[eid].text, "relevance": value} for eid, value in rank_bullets(master, requirements)[:6]],
               "notes": list(analysis.warnings) + ([] if preferred else ["No preferred qualifications measured; preferred component is 0."]), "source_hash": master.source_hash, "cache_key": key}
@@ -96,6 +101,17 @@ def score_job(job: Job, master, store=None):
     if store:
         store.match_set(key, result)
     return result
+
+
+def component_notes(details, preferred_matches):
+    """One sentence per score component saying what it counted."""
+    def count(kind, status=None, priority=None):
+        return sum(d["requirement"]["kind"] == kind and (status is None or d["status"] in status) and (priority is None or d["requirement"]["priority"] != "preferred") for d in details)
+    skills, duties = count("skill", priority=True), count("responsibility")
+    return {"Technical skills (35%)": f"{count('skill', ('supported', 'partial'), True)} of {skills} required/listed skill requirements appear on your resume.",
+            "Project/experience evidence (35%)": f"{count('skill', ('supported',), True)} of {skills} are shown in an accomplishment bullet (not only a skills list).",
+            "Responsibilities (20%)": f"{count('responsibility', ('supported', 'partial'))} of {duties} duties of the job have related experience in your bullets.",
+            "Preferred qualifications (10%)": f"{sum(m.status == 'supported' for m in preferred_matches)} of {len(preferred_matches)} preferred qualifications demonstrated (partial counts half)."}
 
 
 def scan(store, employers=None, master=None, profile=None, filters=None, client=None, progress=None, lease=timedelta(hours=2), on_job=None):

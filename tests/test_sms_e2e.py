@@ -23,7 +23,8 @@ def setup(tmp_path, master, monkeypatch, **settings):
     env.store.set("employers", [dict(name="Fixture Co", source="greenhouse", board="fixtureco", career_url="https://job-boards.greenhouse.io/fixtureco",
                                      enabled=True, verified_at=None)])
     env.verify_phone()
-    env.sms.save_prefs({"summary_hour": 23, "timezone": "Etc/GMT+12"})  # keep the daily summary out of the way until asked for
+    from autoapply.sms import CATEGORIES  # daily summary off until a test asks for it (it depends on the wall clock)
+    env.sms.save_prefs({"categories": [c for c in CATEGORIES if c != "daily_summary"]})
     env.permit()
     env.switch_on()
     monkeypatch.setattr("hunter.service.fetch_board", lambda e, c: Snapshot((aa_job(),), frozenset({"101"}), utcnow()))
@@ -55,7 +56,8 @@ def test_full_approval_flow_over_sms(tmp_path, master, monkeypatch):
     assert app["state"] == S.APPLIED and len(env.router.posts) == 1 and env.router.blocked == []
     assert env.twilio.bodies[-1].startswith("Submitted: Fixture Co")
 
-    env.sms.save_prefs({"summary_hour": 0, "timezone": "UTC"})
+    from autoapply.sms import CATEGORIES
+    env.sms.save_prefs({"summary_hour": 0, "timezone": "UTC", "categories": list(CATEGORIES)})
     env.notifier.run()
     summary = env.twilio.bodies[-1]
     assert summary.startswith("Auto Apply daily summary") and "1 submitted" in summary and "submitted with confirmation" in summary

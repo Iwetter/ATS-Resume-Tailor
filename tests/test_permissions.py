@@ -46,13 +46,13 @@ def test_preferences_validate_persist_and_apply_without_restart(aa):
         controls.save_preferences(aa.store, {"min_fit_review": 80, "min_fit_auto": 70})
     with pytest.raises(ValueError):
         controls.save_preferences(aa.store, {"allow_real_submission": True})  # never overridable
-    controls.save_preferences(aa.store, {"min_fit_auto": 95, "max_per_day": 2}, aa.auto.audit)
-    assert aa.engine.settings.min_fit_auto == 95 and aa.engine.settings.max_per_day == 2
+    controls.save_preferences(aa.store, {"min_fit_auto": 99.5, "max_per_day": 2}, aa.auto.audit)
+    assert aa.engine.settings.min_fit_auto == 99.5 and aa.engine.settings.max_per_day == 2
     assert aa.engine.settings.allow_real_submission is False and aa.engine.base_settings.min_fit_auto == 30
     key = aa.add_job()
     gate = aa.engine.evaluate(key, enqueue=False)
     fit = next(c for c in gate.checks if c.name == "Fit threshold")
-    assert fit.status == "unknown" and "95" in fit.detail  # the worker's gates use the saved value
+    assert fit.status == "unknown" and "99.5" in fit.detail  # the worker's gates use the saved value
     controls.save_preferences(aa.store, {k: None for k in controls.PREF_BOUNDS})
     assert aa.engine.settings.min_fit_auto == 30
     assert any(r["action"] == "preferences_saved" for r in aa.auto.audit_log())

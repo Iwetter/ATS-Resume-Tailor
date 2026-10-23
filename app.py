@@ -11,7 +11,7 @@ import streamlit as st
 
 from ats.extraction import InputError, extract_document, fetch_job
 from ats.exporting import ExportError, export_resume
-from ats.matching import (HEADINGS, extract_requirements, make_resume, parse_resume, rank_bullets, rank_projects, select_projects, validate_requirements)
+from ats.matching import (HEADINGS, STATUS_LABELS, extract_requirements, make_resume, parse_resume, rank_bullets, rank_projects, select_projects, validate_requirements)
 from ats.models import Change, Extracted, digest
 from ats.rewriting import (ModelConfig, apply_changes, parse_changes, rewrite_request, tailor_once, validate_change)
 from ats.scoring import DEFAULT_WEIGHTS, analyze
@@ -58,7 +58,9 @@ def diagnostics(result, resume, requirements):
     for match in result.matches:
         r = req_map[match.requirement_id]
         evidence = "\n".join(f"{eid}: {resume.by_id[eid].text}" for eid in match.evidence_ids if eid in resume.by_id)
-        rows.append({"Requirement": "/".join(r.terms) if r.kind == "skill" else r.text, "Priority": r.priority, "Type": r.kind, "Status": match.status, "Supporting evidence": evidence, "Explanation": match.explanation})
+        status = STATUS_LABELS.get(match.status, match.status) if r.kind != "responsibility" else {"supported": "Related experience shown", "partial": "Some related experience", "missing": "No related experience shown"}[match.status]
+        rows.append({"Requirement": "/".join(r.terms) if r.kind == "skill" else r.text, "Priority": r.priority, "Type": {"skill": "Skill", "responsibility": "Duty / general", "eligibility": "Eligibility"}.get(r.kind, r.kind),
+                     "Status": status, "Supporting evidence": evidence, "Explanation": match.explanation})
     categories = st.tabs(["Requirements & evidence", "Formatting & score details", "Priority improvements"])
     with categories[0]:
         if rows:

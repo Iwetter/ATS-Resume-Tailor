@@ -27,7 +27,7 @@ Real submission stays **off** (`AUTOAPPLY_ALLOW_REAL_SUBMISSION` unset). Nothing
 
 1. Verify your real profile: Auto Apply → Applicant profile (checklist in AUTOAPPLY.md → "Before real submissions").
 2. Set an Anthropic API key, model and prices (sidebar) and run one real Claude tailoring; compare with `data/demo/tailoring/report.md`.
-3. Grader depth (Phase 2): equivalent-terminology table and "absent from resume vs. not demonstrated" labels are partial; extend `ats/matching.py` aliases with real postings from the scan DB.
+3. Grader (Phase 2): done for terminology and labels (see AUTOAPPLY_TEST_REPORT.md). Remaining: 30 real postings still have no recognisable requirement section (mostly prose-only GE Vernova, Etched, Rockwell); re-run `tools/grader_audit.py` after new scans to find new terms.
 4. Streamlit: ATS Grader and Resume Tailor are still one combined five-step page (grade → tailor → export); splitting them is optional.
 5. Cloud: `docker compose build` has never been run (no Docker on the development PC).
 6. More adapters (Ashby, SmartRecruiters, Workday) for form preparation, one at a time after REVIEW-mode validation.

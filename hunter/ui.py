@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from ats.extraction import extract_document, InputError
-from ats.matching import parse_resume
+from ats.matching import STATUS_LABELS, parse_resume
 from ats.models import digest
 
 from .models import Employer, Filters, Profile, utcnow
@@ -295,14 +295,18 @@ def render():
     if match:
         st.metric("Original resume fit estimate", match["fit"])
         st.write("Matched skills: " + (", ".join(match["matched_skills"]) or "No demonstrated technical skills detected"))
-        st.write("Missing qualifications: " + ("; ".join(match["missing"]) or "No extracted requirement marked missing"))
+        st.write("**Not on your resume** (you may still have them; add real experience to your master): " + ("; ".join(match.get("not_on_resume", [])) or "none"))
+        st.write("**Listed but not demonstrated** (named, but no bullet shows it): " + ("; ".join(match.get("listed_not_demonstrated", [])) or "none"))
+        if match.get("duties_not_shown"):
+            st.caption(f"{len(match['duties_not_shown'])} duties of the job have no closely related bullet; these are not missing qualifications.")
         with st.expander("Why this score & strongest evidence", expanded=True):
-            st.json(match["components"])
+            for name, value in match["components"].items():
+                st.write(f"**{name}: {value:g}** " + match.get("component_notes", {}).get(name, ""))
             st.caption(f"Evidence representation: {match['representation']:g}% of mentioned skill requirements have accomplishment evidence. This is separate from fit.")
             st.dataframe(pd.DataFrame(match["strongest_evidence"]), hide_index=True)
             for detail in match["details"]:
                 req = detail["requirement"]
-                st.write(f"**{detail['status']} · {req['priority']}** — {' / '.join(req['terms']) or req['text']}")
+                st.write(f"**{STATUS_LABELS.get(detail['status'], detail['status'])} · {req['priority']}** — {' / '.join(req['terms']) or req['text']}")
                 for evidence in detail["evidence"]:
                     st.write(evidence["id"] + ": " + evidence["text"])
             for note in match["notes"]:

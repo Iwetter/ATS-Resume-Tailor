@@ -1,9 +1,10 @@
 """Finite vocabulary, explicit aliases and binary text similarity."""
 from __future__ import annotations
 
+from dataclasses import replace
+from functools import lru_cache
 import re
 import unicodedata
-from dataclasses import replace
 
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
 
@@ -47,7 +48,73 @@ ALIASES = {
     "Java": ("java",), "JavaScript": ("javascript",), "SQL": ("sql",),
     "CAD": ("cad", "computer aided design"), "SolidWorks": ("solidworks",),
     "Automation": ("automation", "automated"), "Microsoft Office": ("microsoft office",),
+    # Equivalents found in 207 real EE internship postings (October 2026 scan, tools/grader_audit.py).
+    "Schematic capture": ("schematic capture", "schematic design", "schematics", "schematic"),
+    "PCB layout": ("pcb layout", "board layout", "pcb routing", "layout and routing"),
+    "Board bring-up": ("bring-up", "bring up", "bringup", "board bring-up"),
+    "Soldering": ("soldering", "soldered", "solder", "rework"),
+    "Microcontrollers": ("microcontroller", "microcontrollers", "mcu", "mcus"),
+    "Embedded C": ("embedded c",), "Embedded Linux": ("embedded linux",),
+    "Logic analyzer": ("logic analyzer", "logic analyzers"), "Spectrum analyzer": ("spectrum analyzer", "spectrum analyzers"),
+    "Network analyzer": ("network analyzer", "vector network analyzer", "vna"),
+    "Power supplies": ("power supply", "power supplies"),
+    "SPICE": ("spice", "pspice", "hspice", "ngspice"), "OrCAD": ("orcad",), "Cadence": ("cadence", "cadence allegro", "allegro", "virtuoso"),
+    "HDL": ("hdl", "hardware description language", "hardware description languages"),
+    "ECAD": ("ecad", "pcb design software", "pcb design tools", "eda tools", "eda"),
+    "BLE": ("ble", "bluetooth low energy", "bluetooth"), "Ethernet": ("ethernet",), "PCIe": ("pcie", "pci express", "pci-e"),
+    "DDR": ("ddr", "ddr4", "ddr5", "lpddr"), "Wi-Fi": ("wi-fi", "wifi"),
+    "ARM": ("arm cortex", "cortex-m", "arm-based", "arm processors"),
+    "ROS": ("ros", "ros 2", "ros2", "robot operating system"),
+    "Control systems": ("control systems", "control system", "controls engineering", "feedback control", "control theory", "pid control", "pid"),
+    "PLC": ("plc", "plcs", "programmable logic controller", "programmable logic controllers"),
+    "Structured Text": ("structured text", "iec 61131-3"), "Ladder logic": ("ladder logic",), "TwinCAT": ("twincat",),
+    "Motor control": ("motor control", "motor controls", "motor drive", "motor drives", "bldc"),
+    "Battery management": ("battery management", "bms"), "High voltage": ("high voltage", "high-voltage"),
+    "Wire harness": ("harness", "harnesses", "wire harness", "cable harness", "wiring harness"),
+    "RF": ("rf", "radio frequency", "microwave"), "Antennas": ("antenna", "antennas"),
+    "DSP": ("dsp", "digital signal processing", "signal processing"),
+    "Vivado": ("vivado",), "Quartus": ("quartus", "quartus prime"), "ModelSim/Questa": ("modelsim", "questa"), "UVM": ("uvm",),
+    "Mixed-signal": ("mixed-signal", "mixed signal"),
+    "Test automation": ("test automation", "automated testing", "automated test"),
+    "EMI/EMC": ("emi", "emc", "electromagnetic compatibility", "electromagnetic interference"),
+    "IMU": ("imu", "imus", "inertial measurement unit"),
+    "Lab test equipment": ("lab equipment", "test equipment", "laboratory equipment", "bench equipment", "lab instruments", "test and measurement equipment"),
+    "Scripting": ("scripting", "scripting language", "scripting languages"),
+    "Serial protocols": ("communication protocols", "serial protocols", "serial communication", "serial interfaces", "communication interfaces"),
+    "Version control": ("version control", "source control"),
+    "Rust": ("rust",), "Bash": ("bash", "shell scripting"),
+    "nRF52": ("nrf52", "nrf52832", "nrf52840"), "Arduino": ("arduino",), "Raspberry Pi": ("raspberry pi",),
 }
+# A general requirement is met by evidence of a specific instance of it: oscilloscope work
+# demonstrates "lab equipment", I2C/SPI work demonstrates "communication protocols".
+IMPLIES = {
+    "Lab test equipment": ("Oscilloscope", "Multimeter", "Logic analyzer", "Spectrum analyzer", "Network analyzer", "Power supplies"),
+    "Microcontrollers": ("ESP32", "STM32", "nRF52", "Arduino", "ARM"),
+    "HDL": ("VHDL", "Verilog", "SystemVerilog"),
+    "ECAD": ("KiCad", "Altium", "OrCAD", "Cadence"),
+    "Scripting": ("Python", "MATLAB", "Bash"),
+    "Serial protocols": ("I2C", "SPI", "UART", "CAN", "USB"),
+    "Embedded systems": ("Firmware", "Microcontrollers", "ESP32", "STM32", "nRF52", "RTOS", "Embedded C"),
+    "SPICE": ("LTspice",),
+    "Simulation": ("LTspice", "SPICE", "Simulink", "ModelSim/Questa"),
+    "Version control": ("Git",),
+    "PLC": ("TwinCAT", "Structured Text", "Ladder logic"),
+    "Schematic capture": ("KiCad", "Altium", "OrCAD"),
+}
+# What each match status means. A resume can only show what is on it: "not on your resume"
+# is not "you lack this skill".
+STATUS_LABELS = {"supported": "Demonstrated", "partial": "Listed, not demonstrated", "missing": "Not on your resume",
+                 "met": "Met", "unmet": "Not met", "unknown": "Needs your confirmation"}
+STATUS_HELP = {
+    "supported": "An accomplishment bullet in your resume shows this.",
+    "partial": "Named on your resume (for example in Skills) but no accomplishment bullet shows you using it. If you have, add a bullet that says how.",
+    "missing": "Your resume does not mention this. That does not mean you lack it: if you have real experience, add it to your master resume or evidence library. It is never inserted automatically.",
+}
+
+
+def satisfied_by(term: str) -> tuple[str, ...]:
+    """The term itself plus the specific skills that demonstrate it."""
+    return (term,) + IMPLIES.get(term, ())
 
 HEADINGS = {
     "education": "Education", "academic background": "Education",
@@ -74,28 +141,54 @@ def _pattern(alias: str) -> str:
     return r"(?<![\w+])" + re.escape(clean(alias)).replace(r"\ ", r"\s+") + r"(?![\w+])"
 
 
+# Matching runs every alias against every resume line for every requirement, so the pure
+# text functions below are cached (the alias table has ~110 entries).
+@lru_cache(maxsize=None)
+def _compiled(alias: str):
+    return re.compile(_pattern(alias))
+
+
+@lru_cache(maxsize=262144)
 def has_term(text: str, term: str) -> bool:
-    return any(re.search(_pattern(a), clean(text)) for a in ALIASES.get(term, (term,)))
+    value = clean(text)
+    return any(_compiled(a).search(value) for a in ALIASES.get(term, (term,)))
+
+
+@lru_cache(maxsize=65536)
+def _skills(text: str) -> frozenset:
+    return frozenset(name for name in ALIASES if has_term(text, name))
 
 
 def skills_in(text: str) -> set[str]:
-    return {name for name in ALIASES if has_term(text, name)}
+    return set(_skills(text))
 
 
+@lru_cache(maxsize=1)
+def _substitutions():
+    names = list(ALIASES)
+    pairs = sorted(((a, name) for name, aliases in ALIASES.items() for a in aliases), key=lambda x: -len(x[0]))
+    return tuple((_compiled(alias), "skill" + str(names.index(name)) + "token") for alias, name in pairs)
+
+
+@lru_cache(maxsize=65536)
 def normalized(text: str) -> str:
     value = clean(text)
-    substitutions = sorted(((a, name) for name, aliases in ALIASES.items() for a in aliases), key=lambda x: -len(x[0]))
     # Canonical placeholders avoid cascading aliases (C inside C++, etc.).
-    for alias, name in substitutions:
-        placeholder = "skill" + str(list(ALIASES).index(name)) + "token"
-        value = re.sub(_pattern(alias), placeholder, value)
+    for pattern, placeholder in _substitutions():
+        value = pattern.sub(placeholder, value)
     return value
 
 
+@lru_cache(maxsize=65536)
+def _tokens(text: str) -> frozenset:
+    return frozenset(x for x in re.findall(r"[\w]+", normalized(text)) if (len(x) > 2 or x.isdigit()) and x not in ENGLISH_STOP_WORDS and x not in {"experience", "required", "preferred", "skills", "ability", "strong", "excellent"})
+
+
 def tokens(text: str) -> set[str]:
-    return {x for x in re.findall(r"[\w]+", normalized(text)) if (len(x) > 2 or x.isdigit()) and x not in ENGLISH_STOP_WORDS and x not in {"experience", "required", "preferred", "skills", "ability", "strong", "excellent"}}
+    return set(_tokens(text))
 
 
+@lru_cache(maxsize=262144)
 def similarity(a: str, b: str) -> float:
     if not tokens(a) or not tokens(b):
         return 0.0
@@ -155,11 +248,57 @@ def make_resume(items: tuple[Evidence, ...], source_hash: str) -> Resume:
     return Resume(items, tuple(facts), source_hash)
 
 
+# Section headings as real postings write them ("REQUIRED QUALIFICATIONS", "You'll bring these
+# qualifications", "Nice-to-have skills"). A heading is a short line; see _heading().
+REQUIRED_HEADING = re.compile(r"^(?:(?:basic|minimum|required|key|core|must[- ]have|additional|technical)\s+)*(?:qualifications|requirements|skills|experience|skills and (?:experience|qualifications)|qualifications and (?:skills|experience))\s*$"
+                              r"|^what (?:you'll|you will|we) (?:need|bring|require)|^what you bring|^you(?:'ll)? (?:have|bring)|^what we(?:'re| are) looking for|^who you are|^about you|^your (?:background|qualifications|skills)|^you might be a (?:good|great) fit|^you are\b|^required\b"
+                              r"|^qualifications (?:you|we) (?:must have|require|need)|(?:good|great|strong) fit|^(?:what )?we hope you'll bring|^what you need|^minimum requirements")
+PREFERRED_HEADING = re.compile(r"\b(?:preferred|prefer|bonus|nice[- ]to[- ]haves?|desired|good to have|extra credit|stand out|pluses|is a plus|added advantage)\b")
+RESPONSIBILITY_HEADING = re.compile(r"^(?:what you'll do|what you will do|what you'll be doing|responsibilities|key responsibilities|essential (?:duties|functions|responsibilities)|job description|job summary|role summary|about the role|the role|your role|in this role|day[- ]to[- ]day|you will|your impact|the opportunity|duties|how you(?:'ll| will) make an impact)\b")
+# Workday's public job record has no line breaks at all; these headings get them back.
+STRUCTURE_HEADINGS = re.compile(r"(?<![\w-])(Qualifications You Must Have|Qualifications We Prefer|Basic Qualifications|Minimum Qualifications|Required Qualifications|Preferred Qualifications|"
+                                r"Desired Qualifications|Desired Characteristics|Qualifications|Requirements|Responsibilities|Key Responsibilities|Essential Responsibilities|"
+                                r"Job Description|Role Summary|Job Summary|What You Will Do|What You Will Learn|What We Offer|Benefits|Additional Information|"
+                                r"Nice to Have|Bonus Points|Security Clearance Type|Travel Required)\s*:?(?=\s+[A-Z(])")
+
+
+def _restore_structure(text: str) -> str:
+    """Put line breaks back around section headings in single-paragraph postings (Workday)."""
+    if text.count("\n") * 400 >= len(text):  # already has line structure
+        return text
+    return STRUCTURE_HEADINGS.sub(lambda m: "\n" + m.group(1) + ":\n", text)
+CONTEXT_HEADING = re.compile(r"^(?:benefits|perks|compensation|salary|pay|about (?:us|the company|the team)|who we are|why (?:join|work)|our (?:mission|values|culture)|equal (?:employment|opportunity)|eeo|how to apply|application (?:process|instructions)|additional information|company description|technologies you)")
+
+
+def _heading(raw: str) -> str | None:
+    """'required', 'preferred', 'responsibilities', 'context' or None for an ordinary line."""
+    line = raw.strip(" \t•*-;・")
+    words = line.rstrip(":").split()
+    if not words or len(words) > 8 or re.search(r"[.!?]$", line):
+        return None
+    titled = line.endswith(":") or line.isupper() or words[0][:1].isupper()  # the patterns below decide what it is
+    if not titled:
+        return None
+    if skills_in(line):  # "Experience with PCB design in Altium" is a requirement, not a heading
+        return None
+    low = clean(line).rstrip(":").replace("’", "'").strip()
+    if CONTEXT_HEADING.search(low):
+        return "context"
+    if PREFERRED_HEADING.search(low):
+        return "preferred"
+    if RESPONSIBILITY_HEADING.search(low):
+        return "responsibilities"
+    if REQUIRED_HEADING.search(low):
+        return "required"
+    return None
+
+
 def extract_requirements(text: str) -> tuple[Requirement, ...]:
     if len(text.split()) < 15:
         raise ValueError("Paste at least 15 words of job description before analyzing.")
     if len(text) > 45000:
         raise ValueError("Keep the job description under 45,000 characters.")
+    text = _restore_structure(text)
     requirements, seen = [], set()
     priority, in_qualifications, in_responsibilities = "context", False, False
     lines = re.split(r"\n+|(?<=[.;])\s+(?=[A-Z])", text)
@@ -185,6 +324,19 @@ def extract_requirements(text: str) -> tuple[Requirement, ...]:
         if low.startswith(("why you", "technologies you")):
             in_responsibilities = False
             priority = "context"
+            continue
+        heading = _heading(raw)
+        if heading == "required":
+            priority, in_qualifications, in_responsibilities = "required", True, False
+            continue
+        if heading == "preferred":
+            priority, in_qualifications, in_responsibilities = "preferred", True, False
+            continue
+        if heading == "responsibilities":
+            priority, in_responsibilities, in_qualifications = "context", True, False
+            continue
+        if heading == "context":
+            priority, in_qualifications, in_responsibilities = "context", False, False
             continue
         current = "preferred" if re.search(r"\b(preferred|plus|nice.to.have|bonus)\b", low) else ("required" if re.search(r"\b(required|must|minimum)\b", low) else priority)
         hard = bool(re.search(r"\b(degree|bachelor|master'?s|ph\.?d|gpa|citizen|citizenship|authorized|authorisation|authorization|visa|sponsorship|eligible|enrolled|graduat|relocat|available|availability|clearance|pursuing)\w*", low))
@@ -285,9 +437,14 @@ def match_requirement(req: Requirement, resume: Resume) -> Match:
     if req.kind == "eligibility":
         return _eligibility(req, resume)
     if req.kind == "skill":
-        all_hits, demonstrated_hits, satisfied, demonstrated_terms = [], [], [], []
+        all_hits, demonstrated_hits, satisfied, demonstrated_terms, via = [], [], [], [], []
         for term in req.terms or (req.text,):
-            hits = [x for x in resume.items if x.kind != "section" and has_term(x.text, term) and not negated(x.text)]
+            hits = []
+            for option in satisfied_by(term):
+                found = [x for x in resume.items if x.kind != "section" and has_term(x.text, option) and not negated(x.text)]
+                if found and option != term:
+                    via.append(option)
+                hits += found
             all_hits += hits
             evidence = [x for x in hits if demonstrated(x)]
             demonstrated_hits += evidence
@@ -296,19 +453,36 @@ def match_requirement(req: Requirement, resume: Resume) -> Match:
         aggregate = any if req.mode == "any" else all
         status = "supported" if aggregate(demonstrated_terms) else "partial" if any(satisfied) else "missing"
         hits = demonstrated_hits + all_hits
-        explanation = {"supported": "Technical term supported by accomplishment evidence.", "partial": "Mentioned without complete demonstrated evidence for this requirement.", "missing": "No positive evidence found; do not insert this skill."}[status]
+        explanation = STATUS_LABELS[status] + ": " + STATUS_HELP[status]
+        if via and status != "missing":
+            explanation += " Shown through equivalent evidence: " + ", ".join(dict.fromkeys(via)) + "."
         return Match(req.id, status, tuple(dict.fromkeys(x.id for x in hits))[:6], explanation)
+    # A duty of the job ("Bring up and debug new hardware"): compare word stems and the named
+    # skills it involves with your accomplishment bullets.
+    wanted, wanted_skills = _stems(req.text), skills_in(req.text)
     ranked = []
     for item in resume.items:
         if not demonstrated(item):
             continue
-        overlap = len(tokens(req.text) & tokens(item.text)) / max(1, len(tokens(req.text)))
-        score = max(overlap, similarity(req.text, item.text))
+        stems = _stems(item.text)
+        overlap = len(wanted & stems) / max(1, len(wanted))
+        skill_share = len(wanted_skills & {s for s in wanted_skills if any(has_term(item.text, o) for o in satisfied_by(s))}) / len(wanted_skills) if wanted_skills else 0
+        score = max(overlap, similarity(req.text, item.text), skill_share * .8)
         ranked.append((score, item.id))
     ranked.sort(key=lambda x: (-x[0], x[1]))
     top = ranked[0][0] if ranked else 0
-    status = "supported" if top >= .60 else "partial" if top >= .25 else "missing"
-    return Match(req.id, status, tuple(eid for value, eid in ranked[:3] if value >= .25), f"Binary lexical similarity {top:.2f}; review the cited bullet for actual scope.")
+    status = "supported" if top >= .55 else "partial" if top >= .25 else "missing"
+    label = {"supported": "Closely related experience shown", "partial": "Some related experience shown", "missing": "No closely related experience shown"}[status]
+    return Match(req.id, status, tuple(eid for value, eid in ranked[:3] if value >= .25),
+                 f"{label} (similarity {top:.2f}). This is a duty of the job, not a missing qualification; review the cited bullet for actual scope.")
+
+
+_SUFFIX = re.compile(r"(?:ing|ed|es|s|ment|ion|ions)$")
+
+
+def _stems(text: str) -> set[str]:
+    """Content-word stems, so debug/debugged/debugging and design/designs/designed meet."""
+    return {(_SUFFIX.sub("", t) if len(t) > 5 else t) for t in tokens(text)}
 
 
 def rank_projects(resume: Resume, requirements: tuple[Requirement, ...]) -> list[tuple[str, float, str]]:

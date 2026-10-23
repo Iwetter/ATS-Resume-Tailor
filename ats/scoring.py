@@ -65,10 +65,12 @@ def analyze(resume: Resume, extracted: Extracted, requirements: tuple[Requiremen
         label = "/".join(r.terms) or r.text
         if r.kind == "eligibility" and m.status != "met":
             improvements.append(f"Verify eligibility ({m.status}): {r.text}")
+        elif r.priority == "required" and m.status == "missing" and r.kind == "skill":
+            improvements.append(f"Not on your resume: {label}. If you have real experience with it, add a bullet showing it to your master; it is never added automatically.")
+        elif r.priority == "required" and m.status == "partial" and r.kind == "skill":
+            improvements.append(f"Listed but not demonstrated: {label}. Add or reword a bullet that shows you using it, if you have.")
         elif r.priority == "required" and m.status == "missing":
-            improvements.append(f"Required evidence missing: {label}. Flag the gap; add only independently verified experience.")
-        elif r.priority == "required" and m.status == "partial":
-            improvements.append(f"Clarify demonstrated evidence for {label}, if the master supports it.")
+            improvements.append(f"No closely related experience shown for: {label[:120]}. Highlight related work if you have it.")
     for kind in ("skill", "responsibility"):
         if not any(r.kind == kind for r in requirements):
             warnings.append(f"No {kind} requirements measured; that score component is 0. Edit the requirement list.")

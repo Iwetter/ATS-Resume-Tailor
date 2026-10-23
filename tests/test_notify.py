@@ -17,6 +17,9 @@ def env(smsenv):
     smsenv.verify_phone()
     smsenv.switch_on()
     smsenv.permit()
+    # The daily summary depends on the wall clock; only the tests about it switch it on.
+    from autoapply.sms import CATEGORIES
+    smsenv.sms.save_prefs({"categories": [c for c in CATEGORIES if c != "daily_summary"]})
     smsenv.notifier.run()  # first run sets the cursors at "now"
     smsenv.twilio.requests.clear()
     return smsenv
@@ -129,7 +132,7 @@ def test_preparation_failure_alerts_only_when_retries_are_exhausted(env):
 
 
 def test_digest_mode_holds_events_for_the_summary(env):
-    env.sms.save_prefs({"delivery": "digest", "summary_hour": 0})
+    env.sms.save_prefs({"delivery": "digest", "summary_hour": 0, "categories": ["approval", "manual_action", "daily_summary"]})
     app_id = env.ready_application()
     env.auto.update(app_id, action="needs_human", state=S.NEEDS_HUMAN, reasons=["captcha: x"])
     env.notifier.run()

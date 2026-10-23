@@ -112,3 +112,21 @@ Remained disabled throughout. Mocked forms and the fixture router only; no SMS s
 - Live Claude rewriting (needs your API key, model and prices).
 - `docker compose build` and the LibreOffice converter inside the image (no Docker on this PC).
 - Any real employer form beyond read-only inspection; real CAPTCHAs make most Greenhouse/Lever applications manual.
+
+## Phase 2 grader: real-posting terminology and honest status labels
+
+Measured with `tools/grader_audit.py` on the 207 relevant real postings from the live scan, before and after:
+
+| Measure | Before | After |
+| --- | --- | --- |
+| Postings with no "required" section recognised | 140 (68%) | 30 (14%) |
+| Requirements extracted | 2,680 | 3,920 |
+| Skill requirements | 1,105 | 1,464 |
+| Common engineering terms in postings the grader did not know | 40 (scripting, RF, schematics, control systems, Ethernet, bring-up, …) | 0 |
+| Audit run time (207 postings × real resume) | > 10 min (with the larger table, uncached) | 36 s |
+
+Causes fixed: headings were compared with a short exact list ("Required Qualifications", "You'll bring these qualifications", "Nice-to-have skills", "What makes you a good fit" were all missed); Workday's public job record has no line breaks at all, so its sections ran together; the alias table lacked ~60 equivalents; there were no umbrella equivalences (oscilloscope work now demonstrates "lab equipment", I2C/SPI demonstrates "communication protocols", VHDL demonstrates "HDL", LTspice demonstrates "simulation"); duties were matched word-for-word (now word stems plus the skills they involve).
+
+Status labels now say what the resume can and cannot show: **Demonstrated** (an accomplishment bullet shows it), **Listed, not demonstrated** (named but no bullet shows it), **Not on your resume** (with "this does not mean you lack it"). Job duties are labelled "related experience shown / not shown" and are never counted as missing qualifications. Every score component carries a one-line explanation of what it counted. The evidence verifier now rejects only new named tools; a new activity term ("PCB layout", "soldering") is a review flag. 45 new tests in `test_grader_terminology.py`.
+
+Full suite after Phase 2: **392 passed, 0 failed, 0 skipped** (3 min 30 s). The run also exposed a wall-clock dependency in the notification tests from the SMS milestone: run after 6 pm New York time, the fixture's first notifier pass sent that day's summary, so the summary tests failed. The daily summary is now off in those fixtures unless a test turns it on.

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 
-from .matching import METRIC, clean, skills_in, tokens
+from .matching import IMPLIES, METRIC, clean, skills_in, tokens
 from .models import Change, Resume, Validation
 
 # Stages of engineering work. A rewrite may not claim a stage absent from its evidence.
@@ -36,6 +36,13 @@ STAGES = {
 }
 ASSISTANCE = r"\b(?:assist(?:ed|ing)?|help(?:ed|ing)?|support(?:ed|ing)?|contribut(?:ed|ing)|collaborat(?:ed|ing)|co-?(?:designed|developed|authored)|with (?:a|the) team|as part of)\b"
 UNFINISHED = r"\b(?:planned|planning|proposed|ongoing|in progress|currently|future|prototype stage|intend(?:ed)?|not yet|working toward)\b"
+# Skills that describe an activity rather than name a tool. A new one is flagged for review;
+# a new named tool, language or part is rejected. Stages of work are checked separately.
+ACTIVITIES = {"Schematic capture", "PCB layout", "Board bring-up", "Soldering", "Testing", "Debugging", "Verification", "Validation", "Simulation",
+              "Automation", "Data analysis", "Root cause analysis", "Control systems", "Test automation", "Scripting", "Serial protocols",
+              "Version control", "Lab test equipment", "Power supplies", "Wire harness", "Mixed-signal", "Motor control", "Battery management",
+              "High voltage", "Embedded systems", "Digital logic", "Analog circuits", "Signal integrity", "Power electronics", "Timing analysis",
+              "Synthesis", "Place and route", "Robotics", "Firmware", "DSP", "RF", "Antennas", "EMI/EMC", "Microcontrollers", "HDL", "ECAD", "CAD", "Assembly"}
 COMMON = set("a an the and or to of for in on at by with using through from that which as into via per under over across within while including".split())
 
 
@@ -72,9 +79,12 @@ def verify_rewrite(change: Change, master: Resume, library=()) -> Validation:
     new_numbers = _numbers(proposed) - _numbers(corpus)
     if new_numbers:
         hard.append("Numbers or metrics not in the evidence: " + ", ".join(sorted(new_numbers)) + ".")
-    new_skills = skills_in(proposed) - skills_in(corpus)
-    if new_skills:
-        hard.append("Technologies/skills not shown for this project or role: " + ", ".join(sorted(new_skills)) + ".")
+    have = skills_in(corpus)
+    # An umbrella term is supported by any specific instance (oscilloscope -> lab equipment).
+    new_skills = {s for s in skills_in(proposed) - have if not set(IMPLIES.get(s, ())) & have}
+    new_tools, new_activities = new_skills - ACTIVITIES, new_skills & ACTIVITIES
+    if new_tools:
+        hard.append("Technologies/tools not shown for this project or role: " + ", ".join(sorted(new_tools)) + ".")
     # A stage must appear somewhere in this entry's evidence; one borrowed from a sibling
     # bullet (condensing two lines of the same project) is allowed but flagged.
     new_stages = _stages(proposed) - _stages(corpus)
@@ -87,6 +97,8 @@ def verify_rewrite(change: Change, master: Resume, library=()) -> Validation:
         hard.append("Changes whether the work is finished or still planned/ongoing.")
     if hard:
         return Validation("rejected", tuple(hard))
+    if new_activities:
+        flags.append("Names an activity the evidence describes differently or not at all: " + ", ".join(sorted(new_activities)) + "; confirm you did it.")
     if borrowed:
         flags.append("Combines work from another line of this entry (" + ", ".join(sorted(borrowed)) + "); confirm it describes the same work.")
     dropped = _numbers(source.text) - _numbers(proposed)
