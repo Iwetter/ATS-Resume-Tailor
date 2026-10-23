@@ -81,6 +81,9 @@ class Analysis:
     matches: tuple[Match, ...]
     warnings: tuple[str, ...]
     improvements: tuple[str, ...]
+    deductions: tuple[tuple[str, float], ...] = ()   # (requirement id, alignment points lost), largest first
+    unmeasured: tuple[str, ...] = ()                 # components with no requirements in this posting
+    breakdown: dict = field(default_factory=dict)    # category -> {status: count}
 
 
 @dataclass(frozen=True)

@@ -130,3 +130,17 @@ Causes fixed: headings were compared with a short exact list ("Required Qualific
 Status labels now say what the resume can and cannot show: **Demonstrated** (an accomplishment bullet shows it), **Listed, not demonstrated** (named but no bullet shows it), **Not on your resume** (with "this does not mean you lack it"). Job duties are labelled "related experience shown / not shown" and are never counted as missing qualifications. Every score component carries a one-line explanation of what it counted. The evidence verifier now rejects only new named tools; a new activity term ("PCB layout", "soldering") is a review flag. 45 new tests in `test_grader_terminology.py`.
 
 Full suite after Phase 2: **392 passed, 0 failed, 0 skipped** (3 min 30 s). The run also exposed a wall-clock dependency in the notification tests from the SMS milestone: run after 6 pm New York time, the fixture's first notifier pass sent that day's summary, so the summary tests failed. The daily summary is now off in those fixtures unless a test turns it on.
+
+## Grading accuracy: Rocket Lab vs Western Digital (reported issue)
+
+Report: Rocket Lab "Electrical Engineering Intern Summer 2027" graded 98 readability / 49 alignment, with Western Digital recommendations, the degree "unknown" and teamwork, analysis and communication "missing".
+
+Root causes found:
+- **Wrong posting graded.** The flagged phrases ("analytical, problem-solving, and communication skills") are line 177 of the Western Digital posting, not in Rocket Lab's. The URL box was pre-filled with the Western Digital URL, a failed fetch left the previous posting's text in place, and results never said which posting they were for. Requirements and scores are always derived from the text on screen (keyed by its hash), so the mix-up was in which text was there.
+- **Degree "unknown":** a guard rejected any condition containing "must … and", and enrolment required the word "expected"; "May 2028" alone did not count.
+- **"3+ months of experience"** was graded as a job duty by word overlap instead of from dated roles.
+- **Soft-skill sentences** became required duties with no evidence check; "serial communication" counted as communication and "managed multi-chip interfaces" as leadership.
+- **Accomplishment detection** accepted only ~30 lead verbs, so "Coordinated", "Routed", "Restored", "Repaired" bullets were not evidence for any requirement and lost clarity credit.
+- **Scoring:** a component with nothing to measure scored 0 but kept its weight; met qualifications (degree, GPA, experience) earned nothing.
+
+Result for the same real resume (no change made to raise it): Rocket Lab **49 → 79**, Western Digital **74.2**; identical inputs give identical results. Every requirement row shows the resume lines behind it and the points it costs; availability and ITAR are listed to verify and not scored. Remaining Rocket Lab deductions are real: FPGA and SPICE are only listed (no bullet shows them), control systems and motor control are not on the resume, board bring-up is listed only. `tests/test_grading_accuracy.py` (24 tests) covers both postings, switching between them in the app, failed fetches and determinism.

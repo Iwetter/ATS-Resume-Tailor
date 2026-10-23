@@ -96,6 +96,7 @@ IMPLIES = {
     "Serial protocols": ("I2C", "SPI", "UART", "CAN", "USB"),
     "Embedded systems": ("Firmware", "Microcontrollers", "ESP32", "STM32", "nRF52", "RTOS", "Embedded C"),
     "SPICE": ("LTspice",),
+    "FPGA": ("Quartus", "Vivado"),  # FPGA-specific tools; VHDL/Verilog alone are also used for ASICs
     "Simulation": ("LTspice", "SPICE", "Simulink", "ModelSim/Questa"),
     "Version control": ("Git",),
     "PLC": ("TwinCAT", "Structured Text", "Ladder logic"),
@@ -110,6 +111,29 @@ STATUS_HELP = {
     "partial": "Named on your resume (for example in Skills) but no accomplishment bullet shows you using it. If you have, add a bullet that says how.",
     "missing": "Your resume does not mention this. That does not mean you lack it: if you have real experience, add it to your master resume or evidence library. It is never inserted automatically.",
 }
+
+
+# Soft skills a posting asks for, and what resume evidence shows them. Each match must cite
+# a real bullet. Traits a resume cannot show ("thrives in ambiguity", "eager to learn") are
+# not turned into gradable requirements.
+SOFT_SKILLS = {
+    "Teamwork & collaboration": (r"\bteam(?:s|work|mates?)?\b|collaborat\w*|cross[- ]functional|work(?:ing)? (?:closely )?with (?:others|engineers|teams)",
+                                 r"\bteams?\b|collaborat\w*|coordinat\w*|cross[- ]functional|\d+[- ]member|with (?:engineers|students|staff|researchers|mentors)"),
+    "Communication & documentation": (r"communicat\w*|\bwritten\b|\bverbal\b|presentations?\b|documentation|\bdocument(?:ing)?\b|reporting\b",
+                                      # "serial communication" / "communication protocols" are electronics, not a soft skill
+                                      r"document\w*|\bguides?\b|manuals?\b|present\w*|report\w*|(?<!serial )(?<!wireless )(?<!peripheral )(?<!device )communicat\w*(?!\s+(?:protocols?|interfaces?|bus|links?|problems?|issues?))|\btrained\b|\btaught\b|explained|instruct\w*"),
+    "Problem solving & analysis": (r"problem[- ]solv\w*|analytical|troubleshoot\w*|debug\w*|root[- ]cause|critical thinking|solve (?:complex|challenging|real)",
+                                   r"debug\w*|troubleshot|troubleshoot\w*|diagnos\w*|analy[sz]\w*|verif\w*|\btested\b|root[- ]cause|resolved|restored|fault isolation|isolat\w*"),
+    "Leadership & ownership": (r"\blead\b|leadership|ownership|without supervision|independent(?:ly)?\b|self[- ](?:starter|directed|motivated)|initiative",
+                               # "managed multi-chip interfaces" is not leadership: only managing people, teams or projects counts
+                               r"\bled\b|\bleading\b|coordinated|officer|managed (?:a |the |\d+[- ]?(?:person|member) )?(?:team|group|project|students|interns|volunteers|members|budget)|\bowned\b|independently (?:designed|built|developed|led|completed|managed)|president|captain|mentor\w*|supervis\w*"),
+}
+EXPERIENCE_DURATION = re.compile(r"(\d+)\s*\+?\s*(?:or more\s+)?(months?|years?|yrs?)\b[^.\n]{0,60}?\bexperience", re.I)
+MONTHS = "jan feb mar apr may jun jul aug sep oct nov dec".split()
+DATE_RANGE = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(20\d\d)\s*[-–—to]+\s*(?:(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(20\d\d)|(present|current|now))", re.I)
+# Skills too general to make a role count as engineering experience on their own.
+GENERIC_SKILLS = {"Linux", "Microsoft Office", "Testing", "Debugging", "Data analysis", "Git", "SQL", "Java", "JavaScript", "Automation",
+                  "Assembly", "Validation", "Verification", "Version control", "Scripting", "Python", "C", "CAD"}
 
 
 def satisfied_by(term: str) -> tuple[str, ...]:
@@ -301,6 +325,7 @@ def extract_requirements(text: str) -> tuple[Requirement, ...]:
     text = _restore_structure(text)
     requirements, seen = [], set()
     priority, in_qualifications, in_responsibilities = "context", False, False
+    in_benefits = False
     lines = re.split(r"\n+|(?<=[.;])\s+(?=[A-Z])", text)
     for raw in lines:
         line = raw.strip(" \t•*-:;・")
@@ -326,6 +351,7 @@ def extract_requirements(text: str) -> tuple[Requirement, ...]:
             priority = "context"
             continue
         heading = _heading(raw)
+        in_benefits = heading == "context" or (in_benefits and heading is None)  # any other heading ends a benefits section
         if heading == "required":
             priority, in_qualifications, in_responsibilities = "required", True, False
             continue
@@ -339,7 +365,10 @@ def extract_requirements(text: str) -> tuple[Requirement, ...]:
             priority, in_qualifications, in_responsibilities = "context", False, False
             continue
         current = "preferred" if re.search(r"\b(preferred|plus|nice.to.have|bonus)\b", low) else ("required" if re.search(r"\b(required|must|minimum)\b", low) else priority)
-        hard = bool(re.search(r"\b(degree|bachelor|master'?s|ph\.?d|gpa|citizen|citizenship|authorized|authorisation|authorization|visa|sponsorship|eligible|enrolled|graduat|relocat|available|availability|clearance|pursuing)\w*", low))
+        hard = bool(re.search(r"\b(degree|bachelor|master'?s|ph\.?d|gpa|citizen|citizenship|authorized|authorisation|authorization|visa|sponsorship|eligible|enrolled|graduat|relocat|available|availability|clearance|pursuing)\w*", low)
+                    or re.search(r"\bon-?site\b.*\b(?:weeks?|months?)\b|consecutive weeks|full[- ]time.*\b(?:weeks|summer|semester)\b|beginning (?:jan|feb|mar|apr|may|jun)", low))
+        if hard and in_benefits and not re.search(r"citizen|nationalit|u\.?s\.? person|itar|export|clearance|security", low):
+            hard = False  # "eligible for a relocation stipend" is a perk, not a condition
         terms = tuple(sorted(skills_in(line)))
         candidates = []
         if hard:
@@ -351,14 +380,21 @@ def extract_requirements(text: str) -> tuple[Requirement, ...]:
             else:
                 for term in terms:
                     candidates.append((line, "skill", (term,), "all"))
-        if not hard and ((in_responsibilities and re.match(r"(?i)^(design|build|support|optimize|collaborate|create|perform|analy[sz]e|improve|write|integrate|troubleshoot|define|coordinate|develop|conduct|partner|install|investigate|help|assist|test|verify|validate)\b", line)) or (in_qualifications and not terms and len(line.split()) > 5)):
+        duration = not hard and bool(EXPERIENCE_DURATION.search(line))
+        soft = [] if hard or duration or not (in_qualifications or current != "context") else [name for name, (asked, _) in SOFT_SKILLS.items() if re.search(asked, low)]
+        if duration:
+            # "3+ months of applied engineering experience": checked against dated roles, reported as mandatory.
+            candidates.append((line, "eligibility", (), "all"))
+        for name in soft:
+            candidates.append((line, "soft_skill", (name,), "all"))
+        if not hard and not duration and not soft and ((in_responsibilities and re.match(r"(?i)^(design|build|support|optimize|collaborate|create|perform|analy[sz]e|improve|write|integrate|troubleshoot|define|coordinate|develop|conduct|partner|install|investigate|help|assist|test|verify|validate)\b", line)) or (in_qualifications and not terms and len(line.split()) > 5)):
             candidates.append((line, "responsibility", terms, "all"))
         for body, kind, req_terms, mode in candidates:
-            key = (kind, req_terms if kind == "skill" else clean(body))
+            key = (kind, req_terms if kind in ("skill", "soft_skill") else clean(body))
             if key in seen:
                 # Promote a term mentioned again under Required; never count twice.
                 for index, req in enumerate(requirements):
-                    old_key = (req.kind, req.terms if req.kind == "skill" else clean(req.text))
+                    old_key = (req.kind, req.terms if req.kind in ("skill", "soft_skill") else clean(req.text))
                     if old_key == key and {"context": 0, "preferred": 1, "required": 2}[current] > {"context": 0, "preferred": 1, "required": 2}[req.priority]:
                         requirements[index] = replace(req, priority=current, text=body)
                 continue
@@ -377,7 +413,7 @@ def validate_requirements(rows) -> tuple[Requirement, ...]:
         priority = row.get("priority", "required")
         mode = row.get("mode", "all")
         assertion = row.get("assertion", "unknown")
-        if kind not in {"skill", "responsibility", "eligibility"} or priority not in {"required", "preferred", "context"} or mode not in {"all", "any"} or assertion not in {"unknown", "met", "unmet"}:
+        if kind not in {"skill", "responsibility", "eligibility", "soft_skill"} or priority not in {"required", "preferred", "context"} or mode not in {"all", "any"} or assertion not in {"unknown", "met", "unmet"}:
             raise ValueError("Invalid requirement type, priority, mode, or eligibility status.")
         terms = tuple(x.strip() for x in str(row.get("terms", "")).split(";") if x.strip())
         if kind == "skill" and not terms:
@@ -395,8 +431,13 @@ def negated(text: str) -> bool:
     return bool(re.search(r"\b(no experience|not familiar|never used|without experience|plan(?:ned)? to|planning to|intend to|will (?:design|build|develop)|in progress)\b", clean(text)))
 
 
+# Any past-tense lead verb is an accomplishment ("Coordinated", "Routed", "Restored", "Repaired"),
+# not only the ~30 verbs in ACTION; plus common irregular forms.
+PAST_TENSE_LEAD = re.compile(r"^(?:[A-Z][a-z]+ed|Built|Wrote|Led|Ran|Made|Drew|Taught|Won|Set up|Brought up|Rebuilt|Rewrote|Laid out|Taught|Held|Sold|Spent|Kept)\b")
+
+
 def demonstrated(item: Evidence) -> bool:
-    return item.kind == "bullet" and item.section in {"Experience", "Projects", "Leadership", "Activities"} and bool(ACTION.match(item.text)) and not negated(item.text)
+    return item.kind == "bullet" and item.section in {"Experience", "Projects", "Leadership", "Activities"} and bool(ACTION.match(item.text) or PAST_TENSE_LEAD.match(item.text)) and not negated(item.text)
 
 
 def _eligibility(req: Requirement, resume: Resume) -> Match:
@@ -404,7 +445,7 @@ def _eligibility(req: Requirement, resume: Resume) -> Match:
         return Match(req.id, req.assertion, (), "User-verified: " + req.note)
     low = clean(req.text)
     education = [x for x in resume.items if x.section == "Education" and x.kind != "section"]
-    source = " ".join(x.text for x in education)
+    source = "\n".join(x.text for x in education)
     externally_verified = re.search(r"citizen|authori|visa|sponsor|clearance|available|availability|relocat", low)
     if externally_verified:
         return Match(req.id, "unknown", (), "Authorization, citizenship, clearance, location and availability require explicit verification.")
@@ -415,27 +456,131 @@ def _eligibility(req: Requirement, resume: Resume) -> Match:
         own = re.search(r"(?i)GPA\s*[:=]?\s*(\d\.\d+)", source)
         if own:
             return Match(req.id, "met" if float(own[1]) >= float(threshold) else "unmet", tuple(x.id for x in education if own[0] in x.text), f"GPA {own[1]} compared with stated threshold {threshold}.")
-    unsafe = re.search(r"\bgpa\b|\b20\d\d\b|\byears?\b|\bmust.*and\b", low)
-    degree = re.search(r"bachelor|b\.s\.?|bsee|bsece|bs\b|master|m\.s\.?|ph\.?d", clean(source))
-    if not unsafe and degree and re.search(r"degree|bachelor|master|pursuing|enrolled", low):
-        fields = [f for f in ("electrical engineering", "computer engineering", "computer science", "mechanical engineering", "systems engineering") if f in low]
-        field_ok = not fields or any(f in clean(source) for f in fields)
-        degree_patterns = {"bachelor": r"bachelor|b\.s\.?|bsee|bsece|\bbs\b", "master": r"master|m\.s\.?|\bms\b", "doctorate": r"ph\.?d|doctorate|doctoral"}
-        accepted_levels = {key for key, pattern in degree_patterns.items() if re.search(pattern, low)}
-        source_levels = {key for key, pattern in degree_patterns.items() if re.search(pattern, clean(source))}
-        level_ok = not accepted_levels or bool(accepted_levels & source_levels)
-        # Never infer current enrolment from institution alone: an explicit
-        # expected graduation/enrolment statement is needed.
-        current_needed = "currently" in low or "enrolled" in low or ("pursuing" in low and "recently completed" not in low)
-        current_ok = not current_needed or bool(re.search(r"expected|pursuing|currently enrolled", clean(source)))
-        if field_ok and level_ok and current_ok:
-            return Match(req.id, "met", tuple(x.id for x in education), "Education text supports the listed degree condition; verify current enrolment if necessary.")
-    return Match(req.id, "unknown", (), "Not safely inferable from resume text. Verify explicitly; missing evidence does not mean ineligible.")
+    if EXPERIENCE_DURATION.search(req.text) and not re.search(r"degree|bachelor|master|gpa|enrolled|pursuing", low):
+        return _experience_duration(req, resume)
+    # Compound conditions ("Must be enrolled in a bachelor's ... program in electrical engineering and
+    # have at least one semester remaining") are checked clause by clause; every clause must be shown.
+    grad = graduation_date(source)
+    clauses = [c.strip(" ,") for c in re.split(r"\band\b|;", low) if c.strip(" ,")]
+    results = []
+    for clause in clauses:
+        if re.search(r"semester|quarter|term|year of (?:school|study)|returning to school|return to (?:school|campus)|remaining", clause):
+            results.append(_remaining_after_internship(grad))
+        elif re.search(r"degree|bachelor|master|ph\.?d|doctora|pursuing|enrolled|program|student|major", clause):
+            results.append(_degree_clause(clause, source, grad))
+        elif "gpa" in clause:
+            results.append(("unknown", "GPA condition combined with other conditions; check it on its own row."))
+        elif re.search(r"\b(?:have|has|be|with)\b", clause) and len(clause.split()) <= 3:
+            continue  # connective fragment
+        else:
+            results.append(("unknown", f"'{clause[:80]}' is not something a resume can show; verify it."))
+    if results and all(status == "met" for status, _ in results):
+        return Match(req.id, "met", tuple(x.id for x in education), " ".join(why for _, why in results))
+    unclear = "; ".join(why for status, why in results if status != "met")
+    return Match(req.id, "unknown", tuple(x.id for x in education) if any(s == "met" for s, _ in results) else (),
+                 ("Partly shown: " + " ".join(why for s, why in results if s == "met") + " Still to verify: " + unclear) if any(s == "met" for s, _ in results)
+                 else (unclear or "Not safely inferable from resume text. Verify explicitly; missing evidence does not mean ineligible."))
+
+
+def _soft_skill(req: Requirement, resume: Resume) -> Match:
+    """Teamwork, communication, problem solving, leadership: shown only by cited resume lines."""
+    names = [t for t in req.terms if t in SOFT_SKILLS] or [n for n, (asked, _) in SOFT_SKILLS.items() if re.search(asked, clean(req.text))]
+    if not names:
+        return Match(req.id, "missing", (), "Not a recognised soft skill; edit the requirement type.")
+    pattern = "|".join(SOFT_SKILLS[n][1] for n in names)
+    pool = [x for x in resume.items if x.section in {"Experience", "Projects", "Leadership", "Activities"} and x.kind in ("bullet", "entry")]
+    shown = [x for x in pool if x.kind == "bullet" and demonstrated(x) and re.search(pattern, clean(x.text))]
+    named = [x for x in pool if x not in shown and re.search(pattern, clean(x.text))]
+    if shown:
+        return Match(req.id, "supported", tuple(x.id for x in shown[:3]), f"{', '.join(names)}: shown by {len(shown)} accomplishment line(s), cited.")
+    if named:
+        return Match(req.id, "partial", tuple(x.id for x in named[:3]), f"{', '.join(names)}: suggested by a role or title but no accomplishment bullet describes it.")
+    return Match(req.id, "missing", (), f"{', '.join(names)}: no resume line describes it. If you have done it, say so in a bullet (e.g. who you worked with, what you documented).")
+
+
+def graduation_date(education_text: str) -> tuple[int, int] | None:
+    """(year, month) of the latest future month-year in the Education section, e.g. 'May 2028'."""
+    from datetime import date
+    today = date.today()
+    found = [(int(y), MONTHS.index(m[:3].lower()) + 1) for m, y in re.findall(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(20\d\d)\b", education_text, re.I)]
+    future = [d for d in found if d >= (today.year, today.month)]
+    return max(future) if future else None
+
+
+def _degree_clause(clause: str, source: str, grad) -> tuple[str, str]:
+    if re.search(r"\b20\d\d\b|\byears?\b|graduat", clause):
+        return "unknown", "Graduation-date wording needs your check."
+    low_source = clean(source)
+    if not re.search(r"bachelor|b\.s\.?|bsee|bsece|\bbs\b|master|m\.s\.?|ph\.?d", low_source):
+        return "unknown", "No degree found in the Education section."
+    fields = [f for f in ("electrical engineering", "computer engineering", "computer science", "mechanical engineering", "systems engineering") if f in clause]
+    related = bool(re.search(r"related (?:discipline|field)|an engineering\b|engineering discipline|stem\b", clause))
+    field_ok = not fields or any(f in low_source for f in fields) or (related and "engineering" in low_source)
+    degree_patterns = {"bachelor": r"bachelor|b\.s\.?|bsee|bsece|\bbs\b", "master": r"master|m\.s\.?|\bms\b", "doctorate": r"ph\.?d|doctorate|doctoral"}
+    accepted = {k for k, p in degree_patterns.items() if re.search(p, clause)}
+    held = {k for k, p in degree_patterns.items() if re.search(p, low_source)}
+    level_ok = not accepted or bool(accepted & held)
+    # Current enrolment: an explicit statement, or a graduation date that is still in the future.
+    current_needed = bool(re.search(r"currently|enrolled|pursuing|student", clause))
+    current_ok = not current_needed or bool(re.search(r"expected|pursuing|currently enrolled", low_source)) or grad is not None
+    degree_line = next((line for line in source.split("\n") if re.search(r"bachelor|master|b\.s\.|m\.s\.|ph\.?d", line, re.I)), "the listed degree")
+    if field_ok and level_ok and current_ok:
+        when = f", graduating {MONTHS[grad[1] - 1].title()} {grad[0]}" if grad else ""
+        return "met", f"Education shows {degree_line.strip()}{when}."
+    missing = [name for name, ok in (("field of study", field_ok), ("degree level", level_ok), ("current enrolment", current_ok)) if not ok]
+    return "unknown", "Could not confirm " + ", ".join(missing) + " from the Education section."
+
+
+def _remaining_after_internship(grad) -> tuple[str, str]:
+    """'At least one semester remaining after the internship': needs graduation a year or more away."""
+    from datetime import date
+    if grad is None:
+        return "unknown", "No future graduation date in the Education section to confirm remaining semesters."
+    today = date.today()
+    months_left = (grad[0] - today.year) * 12 + grad[1] - today.month
+    if months_left >= 12:
+        return "met", f"Graduation {MONTHS[grad[1] - 1].title()} {grad[0]} leaves at least one semester after an internship in the coming year."
+    return "unknown", f"Graduation {MONTHS[grad[1] - 1].title()} {grad[0]} is under a year away; confirm a semester remains after the internship."
+
+
+def experience_months(resume: Resume) -> tuple[int, list[tuple[str, str, int]]]:
+    """Months of dated engineering roles and projects (overlaps counted once), with the entries used."""
+    from datetime import date
+    today = date.today()
+    covered, used = set(), []
+    for entry in (x for x in resume.items if x.kind == "entry" and x.section in {"Experience", "Projects", "Leadership", "Activities"}):
+        group = [x.text for x in resume.items if entry.group and x.group == entry.group] or [entry.text]
+        if not (skills_in(" ".join(group)) - GENERIC_SKILLS):
+            continue  # not an engineering role (e.g. IT support only)
+        dated = next((e for e in [entry.text] + group if DATE_RANGE.search(e)), None)
+        if not dated:
+            continue
+        m = DATE_RANGE.search(dated)
+        start = int(m[2]) * 12 + MONTHS.index(m[1][:3].lower())
+        end = today.year * 12 + today.month - 1 if m[5] else int(m[4]) * 12 + MONTHS.index(m[3][:3].lower())
+        months = set(range(start, max(start, end)))  # end month excluded: conservative
+        if months - covered:
+            covered |= months
+            used.append((entry.id, entry.text, len(months)))
+    return len(covered), used
+
+
+def _experience_duration(req: Requirement, resume: Resume) -> Match:
+    m = EXPERIENCE_DURATION.search(req.text)
+    need = int(m[1]) * (12 if m[2].lower().startswith(("y", "yr")) else 1)
+    have, used = experience_months(resume)
+    ids = tuple(eid for eid, _, _ in used)
+    listing = "; ".join(f"{text.split('|')[0].strip()[:40]} ({n} mo)" for _, text, n in used) or "no dated engineering roles"
+    if have >= need:
+        return Match(req.id, "met", ids, f"About {have} months of dated engineering work: {listing}. Needs {need}.")
+    return Match(req.id, "unknown", ids, f"About {have} months of dated engineering work found ({listing}); needs {need}. Undated projects also count, so confirm rather than treat this as unmet.")
 
 
 def match_requirement(req: Requirement, resume: Resume) -> Match:
     if req.kind == "eligibility":
         return _eligibility(req, resume)
+    if req.kind == "soft_skill":
+        return _soft_skill(req, resume)
     if req.kind == "skill":
         all_hits, demonstrated_hits, satisfied, demonstrated_terms, via = [], [], [], [], []
         for term in req.terms or (req.text,):

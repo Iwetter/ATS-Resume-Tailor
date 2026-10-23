@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # HUNTER_DB lets a container keep the database on a persistent volume.
 DEFAULT_DB = Path(os.environ.get("HUNTER_DB") or ROOT / "data" / "hunter.sqlite3")
 WATCHLIST = ROOT / "hunter" / "employers.json"
-SCORING_VERSION = "hunter-2-terminology"  # bump: cached scores recompute after matching changes
+SCORING_VERSION = "hunter-3-evidence"  # bump: cached scores recompute after matching changes
 
 
 def profile_from_master(profile, master):
@@ -76,8 +76,15 @@ def score_job(job: Job, master, store=None):
     analysis = analyze(master, Extracted(master.text, "verified-ledger"), core)
     preferred_matches = tuple(match_requirement(r, master) for r in preferred)
     preferred_score = 100 * sum({"supported": 1, "partial": .5}.get(m.status, 0) for m in preferred_matches) / len(preferred_matches) if preferred_matches else 0
-    components = {"Technical skills (35%)": analysis.components["skill_coverage"], "Project/experience evidence (35%)": analysis.components["experience_evidence"], "Responsibilities (20%)": analysis.components["responsibilities"], "Preferred qualifications (10%)": round(preferred_score, 1)}
-    fit = round(.35*analysis.components["skill_coverage"] + .35*analysis.components["experience_evidence"] + .20*analysis.components["responsibilities"] + .10*preferred_score, 1)
+    # Nominal weights; a part with no requirements in this posting is left out and the rest renormalised.
+    parts = {"Technical skills (35%)": (.35, analysis.components["skill_coverage"], "skill_coverage"),
+             "Project/experience evidence (35%)": (.35, analysis.components["experience_evidence"], "experience_evidence"),
+             "Responsibilities (20%)": (.20, analysis.components["responsibilities"], "responsibilities"),
+             "Soft skills (5%)": (.05, analysis.components["soft_skills"], "soft_skills"),
+             "Preferred qualifications (10%)": (.10, round(preferred_score, 1), None if preferred_matches else "preferred")}
+    measured = {name: (w, v) for name, (w, v, key) in parts.items() if key not in analysis.unmeasured and key != "preferred"}
+    components = {name: v for name, (w, v, key) in parts.items()}
+    fit = round(sum(w * v for w, v in measured.values()) / (sum(w for w, _ in measured.values()) or 1), 1)
     matches = analysis.matches + preferred_matches
     by_id = {r.id: r for r in core+preferred}
     details = []
@@ -111,6 +118,7 @@ def component_notes(details, preferred_matches):
     return {"Technical skills (35%)": f"{count('skill', ('supported', 'partial'), True)} of {skills} required/listed skill requirements appear on your resume.",
             "Project/experience evidence (35%)": f"{count('skill', ('supported',), True)} of {skills} are shown in an accomplishment bullet (not only a skills list).",
             "Responsibilities (20%)": f"{count('responsibility', ('supported', 'partial'))} of {duties} duties of the job have related experience in your bullets.",
+            "Soft skills (5%)": f"{count('soft_skill', ('supported',))} of {count('soft_skill')} soft skills asked for are shown by a cited bullet.",
             "Preferred qualifications (10%)": f"{sum(m.status == 'supported' for m in preferred_matches)} of {len(preferred_matches)} preferred qualifications demonstrated (partial counts half)."}
 
 

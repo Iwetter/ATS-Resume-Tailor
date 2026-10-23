@@ -5,6 +5,7 @@ from difflib import SequenceMatcher
 from html import escape
 import json
 from pathlib import Path
+import re
 
 import pandas as pd
 import streamlit as st
@@ -18,7 +19,6 @@ from ats.scoring import DEFAULT_WEIGHTS, analyze
 
 ROOT = Path(__file__).parent
 WORKSPACES = ["Dashboard", "Find Internships", "Resume Grader & Tailor", "Auto Apply", "Applications", "Notifications", "Settings"]
-JOB_URL = "https://jobs.smartrecruiters.com/WesternDigital/744000140949875-summer-2027-intern-hardware-engineering"
 st.set_page_config(page_title="Resume Bench | ATS Grader & Tailor", page_icon="📄", layout="wide")
 st.markdown("""<style>
 .block-container {max-width:1250px;padding-top:2.5rem}
@@ -29,6 +29,28 @@ del {background:#fce5e2;color:#8c2420;text-decoration:line-through}
 ins {background:#d5efe2;color:#154f38;text-decoration:none}
 [data-testid="stMetric"] {background:white;border:1px solid #d9e0da;border-radius:10px;padding:1rem}
 </style>""", unsafe_allow_html=True)
+
+
+def set_job_text(text, origin):
+    """Replace the job description and forget everything derived from the previous one."""
+    st.session_state.job_input = text
+    st.session_state.job_origin = origin
+    st.session_state.job_origin_hash = digest(text) if text else None
+    for key in ("analysis", "analysis_hash", "own_bundle", "own_bundle_hash"):
+        st.session_state.pop(key, None)
+    reset_review()
+
+
+def job_title(text):
+    lines = [line.strip() for line in text.splitlines() if line.strip() and not re.fullmatch(r"(?i)back to jobs|apply|job description", line.strip())]
+    return lines[0][:90] if lines else "(untitled)"
+
+
+def job_source_label(text):
+    """Which posting is being graded, where it came from, and whether it was edited since."""
+    origin = st.session_state.get("job_origin") or "Pasted text"
+    edited = st.session_state.get("job_origin_hash") not in (None, digest(text))
+    return f"Grading: {job_title(text)} · {origin}{' (edited after loading)' if edited else ''} · text fingerprint {digest(text)[:8]}"
 
 
 def reset_review():
@@ -54,33 +76,42 @@ def requirement_rows(reqs):
 
 def diagnostics(result, resume, requirements):
     req_map = {r.id: r for r in requirements}
+    lost = dict(result.deductions)
     rows = []
     for match in result.matches:
         r = req_map[match.requirement_id]
-        evidence = "\n".join(f"{eid}: {resume.by_id[eid].text}" for eid in match.evidence_ids if eid in resume.by_id)
+        evidence = "\n".join(f"{resume.by_id[eid].text}" for eid in match.evidence_ids if eid in resume.by_id)
         status = STATUS_LABELS.get(match.status, match.status) if r.kind != "responsibility" else {"supported": "Related experience shown", "partial": "Some related experience", "missing": "No related experience shown"}[match.status]
-        rows.append({"Requirement": "/".join(r.terms) if r.kind == "skill" else r.text, "Priority": r.priority, "Type": {"skill": "Skill", "responsibility": "Duty / general", "eligibility": "Eligibility"}.get(r.kind, r.kind),
-                     "Status": status, "Supporting evidence": evidence, "Explanation": match.explanation})
-    categories = st.tabs(["Requirements & evidence", "Formatting & score details", "Priority improvements"])
+        scored = not (r.kind == "eligibility" and match.status == "unknown")
+        rows.append({"Requirement": "/".join(r.terms) if r.kind in ("skill", "soft_skill") else r.text, "Priority": r.priority,
+                     "Type": {"skill": "Technical skill", "responsibility": "Duty", "eligibility": "Stated qualification", "soft_skill": "Soft skill"}.get(r.kind, r.kind),
+                     "Status": status, "Points lost": lost.get(match.requirement_id, 0.0) if scored else None,
+                     "Resume evidence": evidence or ("(none on resume)" if scored else "(verify yourself; not scored)"), "Why": match.explanation})
+    categories = st.tabs(["Requirements & evidence", "Score breakdown", "What would raise the score"])
     with categories[0]:
         if rows:
-            st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch", column_config={"Supporting evidence": st.column_config.TextColumn(width="large"), "Requirement": st.column_config.TextColumn(width="large")})
+            st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch", column_config={
+                "Resume evidence": st.column_config.TextColumn(width="large"), "Requirement": st.column_config.TextColumn(width="large"),
+                "Points lost": st.column_config.NumberColumn(format="%.1f", help="Alignment points this requirement costs now")})
         else:
             st.warning("No requirements extracted. Add requirements in the editor above.")
-        st.caption("Supported = a positive accomplishment bullet; partial = mention or incomplete evidence. Responsibility similarity is lexical and needs review. Unknown eligibility is not a finding of ineligibility.")
+        st.caption("Every match cites the resume lines behind it. Stated qualifications the resume cannot show (availability, export control) are listed for you to verify and are not scored either way.")
     with categories[1]:
         a, b = st.columns(2)
-        a.dataframe(pd.DataFrame([{"Alignment component": k, "Score / 100": v} for k, v in result.components.items()]), hide_index=True)
+        a.dataframe(pd.DataFrame([{"Alignment component": k.replace("_", " "), "Score / 100": (None if k in result.unmeasured else v),
+                                   "Note": "not in this posting; left out of the average" if k in result.unmeasured else ""} for k, v in result.components.items()]), hide_index=True)
         b.dataframe(pd.DataFrame([{"Readability check": k, "Points": v} for k, v in result.checks.items()]), hide_index=True)
+        if result.breakdown:
+            st.dataframe(pd.DataFrame([{"Category": cat, **{STATUS_LABELS.get(k, k): v for k, v in counts.items()}} for cat, counts in sorted(result.breakdown.items())]).fillna(0), hide_index=True, width="stretch")
         for warning in result.warnings:
             st.warning(warning)
-        st.caption("Heuristics, not an employer ATS algorithm or interview probability. Missing measurement contributes 0. Repeated terms do not increase skill coverage or binary TF-IDF similarity.")
+        st.caption("Heuristics, not an employer ATS algorithm or interview probability. A component with nothing to measure in this posting is left out instead of scored 0. Repeated terms do not raise any score.")
     with categories[2]:
         if result.improvements:
             for improvement in result.improvements:
                 st.write("• " + improvement)
         else:
-            st.write("Review the evidence table and eligibility conditions before applying.")
+            st.write("Nothing measurable is missing. Review the evidence table and eligibility conditions before applying.")
 
 
 if st.session_state.get("navigate_to"):
@@ -91,10 +122,7 @@ if st.session_state.pop("hunter_navigate", False):
     if pending:
         st.session_state.pop("phase1_upload", None)
         st.session_state.hunter_job = pending
-        st.session_state.job_input = pending["description"]
-        st.session_state.job_origin = pending["company"] + " · " + pending["title"]
-        st.session_state.pop("analysis", None)
-        reset_review()
+        set_job_text(pending["description"], "Internship Hunter · " + pending["company"] + " · " + pending["title"])
 
 with st.sidebar:
     st.markdown("### Resume Bench")
@@ -195,22 +223,22 @@ with left:
             st.download_button("Download untouched master", st.session_state.original_bytes, "master-original" + Path(st.session_state.original_name).suffix.lower())
 with right:
     st.subheader("02  Job description")
-    url = st.text_input("Job posting URL", value=JOB_URL)
+    url = st.text_input("Job posting URL", key="job_url", placeholder="https://job-boards.greenhouse.io/…")
     a, b = st.columns(2)
-    if a.button("Fetch job URL"):
+    if a.button("Fetch job URL", disabled=not url.strip()):
         try:
             with st.spinner("Retrieving job description…"):
-                fetched = fetch_job(url)
-            st.session_state.job_input = fetched
-            st.session_state.job_origin = url
+                fetched = fetch_job(url.strip())
+            set_job_text(fetched, "Fetched from " + url.strip())
         except InputError as exc:
-            st.error(str(exc))
+            # Fail closed: never leave the previous posting's text in place to be graded by mistake.
+            set_job_text("", "")
+            st.error(str(exc) + " The previous job description was cleared.")
     if b.button("Use saved Western Digital example"):
-        st.session_state.job_input = (ROOT / "tests/fixtures/western_digital_job.txt").read_text(encoding="utf-8")
-        st.session_state.job_origin = "Saved posting snapshot · retrieved October 20, 2026"
+        set_job_text((ROOT / "tests/fixtures/western_digital_job.txt").read_text(encoding="utf-8"), "Saved Western Digital example (snapshot retrieved October 20, 2026)")
     job_text = st.text_area("Paste or review job description", key="job_input", height=340, placeholder="Paste the complete responsibilities and qualifications here.")
-    if st.session_state.get("job_origin"):
-        st.caption(st.session_state.job_origin)
+    if job_text.strip():
+        st.caption(job_source_label(job_text))
     st.caption("Review fetched text before analysis. For a posting covering multiple tracks, remove unrelated requirements in the editor.")
 
 if "master" not in st.session_state or not job_text.strip():
@@ -254,7 +282,7 @@ with st.expander("Edit extracted requirements before analysis", expanded=True):
     st.caption("Each skill row uses semicolon-separated terms. “any” represents alternatives; “all” requires every term. Required, preferred and contextual priorities have weights 2, 1 and 0.5. Eligibility is reported separately from alignment. Verify a hard condition with an explicit note, or leave it unknown.")
     columns = ["id", "text", "kind", "priority", "terms", "mode", "assertion", "note"]
     edited = st.data_editor(pd.DataFrame(requirement_rows(extracted_reqs), columns=columns), key="reqs_"+version, num_rows="dynamic", hide_index=True, disabled=["id"], width="stretch", column_config={
-        "kind": st.column_config.SelectboxColumn(options=["skill", "responsibility", "eligibility"], required=True),
+        "kind": st.column_config.SelectboxColumn(options=["skill", "responsibility", "eligibility", "soft_skill"], required=True),
         "priority": st.column_config.SelectboxColumn(options=["required", "preferred", "context"], required=True),
         "mode": st.column_config.SelectboxColumn(options=["all", "any"], required=True),
         "assertion": st.column_config.SelectboxColumn(options=["unknown", "met", "unmet"], required=True),
@@ -278,6 +306,7 @@ if st.session_state.get("analysis_hash") != analysis_hash or "analysis" not in s
     st.info("Click Analyze Resume to score the current source, requirements, and weights.")
     st.stop()
 before = st.session_state.analysis
+st.info(job_source_label(job_text))  # the exact posting these results belong to
 a, b = st.columns(2)
 a.metric("ATS readability · original", f"{before.readability:.0f} / 100")
 b.metric("Job alignment · original", f"{before.alignment:.0f} / 100")
