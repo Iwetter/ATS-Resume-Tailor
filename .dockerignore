@@ -10,6 +10,15 @@ work
 !.env.example
 *.sqlite3*
 *.log
+secrets
+.streamlit/secrets.toml
+*.pem
+*.key
+*.secret
+storage_state*.json
+cookies*.json
+applicant_profile*.json
+answer_bank*.json
 *.pdf
 *.docx
 !tests/fixtures/**

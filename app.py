@@ -16,6 +16,7 @@ from ats.matching import (HEADINGS, STATUS_LABELS, extract_requirements, make_re
 from ats.models import Change, Extracted, digest
 from ats.rewriting import (ModelConfig, apply_changes, parse_changes, rewrite_request, tailor_once, validate_change)
 from ats.scoring import DEFAULT_WEIGHTS, analyze
+from autoapply import config as server_config
 
 ROOT = Path(__file__).parent
 WORKSPACES = ["Dashboard", "Find Internships", "Resume Grader & Tailor", "Auto Apply", "Applications", "Notifications", "Settings"]
@@ -125,6 +126,7 @@ if st.session_state.pop("hunter_navigate", False):
         set_job_text(pending["description"], "Internship Hunter · " + pending["company"] + " · " + pending["title"])
 
 with st.sidebar:
+    server_settings = server_config.load()
     st.markdown("### Resume Bench")
     workspace_page = st.radio("Workspace", WORKSPACES, key="workspace_page")
     st.caption("EVIDENCE FIRST · ENGINEERING INTERNSHIPS")
@@ -138,14 +140,13 @@ with st.sidebar:
         api_key = st.text_input("OpenAI API key", type="password", disabled=not enabled, help="Kept only in this local session; never read automatically from environment or saved to disk.")
         model = st.text_input("Model ID", disabled=not enabled, placeholder="A model you have configured for structured outputs")
     else:
-        import os
         api_key = st.text_input("Anthropic API key (blank = server ANTHROPIC_API_KEY)", type="password", disabled=not enabled,
-                                help="Kept only in this session. Leave blank to use the key configured on the server.") or os.environ.get("ANTHROPIC_API_KEY", "")
-        model = st.text_input("Claude model ID", value=os.environ.get("CLAUDE_MODEL", ""), disabled=not enabled, placeholder="e.g. the model in CLAUDE_MODEL")
+                                help="Kept only in this session. Leave blank to use the key configured on the server.") or server_settings.anthropic_api_key
+        model = st.text_input("Claude model ID", value=server_settings.claude_model, disabled=not enabled, placeholder="e.g. the model in CLAUDE_MODEL")
         p1, p2 = st.columns(2)
-        price_in = p1.number_input("Input $/M tokens", 0.0, 200.0, float(os.environ.get("CLAUDE_INPUT_USD_PER_MTOK") or 0), 0.25, disabled=not enabled,
+        price_in = p1.number_input("Input $/M tokens", min_value=0.0, value=max(0.0, server_settings.claude_input_usd_per_mtok or 0.0), step=0.25, disabled=not enabled,
                                    help="Copy the current price for this model from your Anthropic console. Needed so the daily/monthly spend limits can be enforced.")
-        price_out = p2.number_input("Output $/M tokens", 0.0, 400.0, float(os.environ.get("CLAUDE_OUTPUT_USD_PER_MTOK") or 0), 0.25, disabled=not enabled)
+        price_out = p2.number_input("Output $/M tokens", min_value=0.0, value=max(0.0, server_settings.claude_output_usd_per_mtok or 0.0), step=0.25, disabled=not enabled)
     output_budget = st.number_input("Maximum output tokens", min_value=256, max_value=3000, value=1800, step=128, disabled=not enabled)
     if provider != "OpenAI":
         from autoapply.llm import claude_status

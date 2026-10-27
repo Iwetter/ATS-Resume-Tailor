@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 from docx import Document
 from docx.oxml.ns import qn
@@ -162,35 +163,40 @@ def tailor_docx(original: bytes, master: Resume, final: Resume) -> tuple[bytes, 
 
 def docx_to_pdf(docx_bytes: bytes, timeout=120) -> tuple[bytes | None, str]:
     """(pdf, converter) using Word on Windows or LibreOffice elsewhere; (None, reason) if neither works."""
+    deadline = time.monotonic() + max(0.1, timeout)
     with tempfile.TemporaryDirectory() as tmp:
         source, target = Path(tmp) / "resume.docx", Path(tmp) / "resume.pdf"
         source.write_bytes(docx_bytes)
         errors = []
         if sys.platform == "win32":
             try:
-                import pythoncom
-                import win32com.client
-                pythoncom.CoInitialize()  # Streamlit runs scripts on worker threads
-                word = win32com.client.DispatchEx("Word.Application")
-                try:
-                    word.Visible, word.DisplayAlerts = False, 0
-                    document = word.Documents.Open(str(source), ReadOnly=True, AddToRecentFiles=False, Visible=False)
-                    document.SaveAs2(str(target), FileFormat=17)  # wdFormatPDF
-                    document.Close(False)
-                    del document  # release the COM proxy while Word is still running
-                finally:
-                    word.Quit()
-                    del word
-                if target.is_file():
+                # COM/RPC faults and licensing dialogs must not crash or hang
+                # Streamlit. Reserve time for a LibreOffice fallback as well.
+                result = subprocess.run([sys.executable, str(Path(__file__).with_name("word_pdf.py")), str(source), str(target)],
+                                        timeout=min(45, max(0.1, timeout / 2)), capture_output=True,
+                                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                if result.returncode == 0 and target.is_file():
                     return target.read_bytes(), "Microsoft Word"
-            except Exception as exc:  # Word missing, licensing dialog, COM error
+                errors.append("Word: conversion failed or no PDF was produced")
+            except (subprocess.SubprocessError, OSError) as exc:
                 errors.append(f"Word: {type(exc).__name__}")
+            if target.exists():
+                target.unlink()  # Never mistake a failed conversion's partial PDF for a fallback.
         office = shutil.which("soffice") or shutil.which("libreoffice")
         if office:
             try:
-                subprocess.run([office, "--headless", "--convert-to", "pdf", "--outdir", tmp, str(source)], check=True, timeout=timeout, capture_output=True)
+                # Separate profiles let the worker and dashboard render at the
+                # same time without attaching to each other's office instance.
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(office, timeout)
+                profile = (Path(tmp) / "libreoffice-profile").as_uri()
+                subprocess.run([office, "-env:UserInstallation=" + profile, "--headless", "--norestore", "--convert-to", "pdf", "--outdir", tmp, str(source)],
+                               check=True, timeout=remaining, capture_output=True,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0)
                 if target.is_file():
                     return target.read_bytes(), "LibreOffice"
+                errors.append("LibreOffice: conversion returned without producing a PDF")
             except (subprocess.SubprocessError, OSError) as exc:
                 errors.append(f"LibreOffice: {type(exc).__name__}")
         return None, "; ".join(errors) or "No DOCX-to-PDF converter (Microsoft Word or LibreOffice) is available."

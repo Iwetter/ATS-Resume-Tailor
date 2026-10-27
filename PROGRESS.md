@@ -1,6 +1,6 @@
 # Progress — ATS Resume Tailor & Autonomous Internship Hunter
 
-Branch: `feature/ats-hunter-complete` (from GitHub `main` 36117fb). Never merged to `main` by automation.
+The complete implementation originally lived on `feature/ats-hunter-complete` (from GitHub `main` 36117fb). The October 27 repair updates both `main` and that branch to the complete application with runtime, configuration and rendering fixes. See [REPAIR_REPORT.md](REPAIR_REPORT.md) for the findings and the 438-test validation.
 Real submission stays **off** (`AUTOAPPLY_ALLOW_REAL_SUBMISSION` unset). Nothing is deployed publicly.
 
 ## Commit history on this branch

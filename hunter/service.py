@@ -12,6 +12,7 @@ import re
 from ats.matching import extract_requirements, match_requirement, rank_bullets, has_term, make_resume
 from ats.models import Change, Extracted, digest
 from ats.scoring import analyze
+from runtime import load_environment
 
 from .filtering import decide, us_location
 from .http import PublicClient, RateLimited, SourceError
@@ -19,6 +20,7 @@ from .models import Employer, Filters, Job, Profile, utcnow
 from .sources import fetch_board
 
 ROOT = Path(__file__).resolve().parents[1]
+load_environment()
 # HUNTER_DB lets a container keep the database on a persistent volume.
 DEFAULT_DB = Path(os.environ.get("HUNTER_DB") or ROOT / "data" / "hunter.sqlite3")
 WATCHLIST = ROOT / "hunter" / "employers.json"

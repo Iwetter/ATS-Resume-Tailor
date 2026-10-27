@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
+import math
 import time
 
 import jsonschema
@@ -51,6 +52,10 @@ def estimate_tokens(text: str) -> int:
     return len(text) // 3 + 50
 
 
+def valid_amount(value, *, positive=False):
+    return isinstance(value, (int, float)) and math.isfinite(value) and (value > 0 if positive else value >= 0)
+
+
 def claude_status(enabled, api_key, model, input_price, output_price) -> tuple[bool, str]:
     """Plain-language reason Claude rewriting can or cannot run, for the UI."""
     if not enabled:
@@ -59,7 +64,7 @@ def claude_status(enabled, api_key, model, input_price, output_price) -> tuple[b
         return False, "No Anthropic API key. Paste one above or set ANTHROPIC_API_KEY. (A Claude Pro subscription does not include API access; the API is billed separately.)"
     if not (model or "").strip():
         return False, "No model ID. Enter a Claude model, e.g. the one in CLAUDE_MODEL."
-    if not input_price or not output_price:
+    if not valid_amount(input_price, positive=True) or not valid_amount(output_price, positive=True):
         return False, "Enter this model's input and output prices per million tokens (from your Anthropic console) so spending limits can be enforced."
     return True, f"ready ({model}); each Tailor click is one cached, budgeted request."
 
@@ -80,8 +85,10 @@ class Claude:
             return False, "ANTHROPIC_API_KEY is not set."
         if not s.claude_model:
             return False, "CLAUDE_MODEL is not set."
-        if s.claude_input_usd_per_mtok is None or s.claude_output_usd_per_mtok is None:
-            return False, "Set CLAUDE_INPUT_USD_PER_MTOK and CLAUDE_OUTPUT_USD_PER_MTOK so spending limits can be enforced."
+        if not valid_amount(s.claude_input_usd_per_mtok, positive=True) or not valid_amount(s.claude_output_usd_per_mtok, positive=True):
+            return False, "Set finite positive CLAUDE_INPUT_USD_PER_MTOK and CLAUDE_OUTPUT_USD_PER_MTOK so spending limits can be enforced."
+        if not valid_amount(s.claude_daily_usd) or not valid_amount(s.claude_monthly_usd):
+            return False, "Claude daily and monthly USD limits must be finite, non-negative numbers."
         return True, "Configured."
 
     @property

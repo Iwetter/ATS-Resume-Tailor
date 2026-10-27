@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 import os
 from pathlib import Path
 
 from hunter.service import DEFAULT_DB
+from runtime import load_environment
 
 
 def _bool(name, default=False):
@@ -32,7 +34,8 @@ def _float(name, default=None):
     if raw is None or raw.strip() == "":
         return default
     try:
-        return float(raw)
+        value = float(raw)
+        return value if math.isfinite(value) else default
     except ValueError:
         return default
 
@@ -113,6 +116,7 @@ def _secret(name):
 
 
 def load(**overrides) -> Settings:
+    load_environment()
     values = dict(
         db_path=Path(os.environ.get("HUNTER_DB") or DEFAULT_DB),
         scan_interval=_int("SCAN_INTERVAL_SECONDS", 720, 300, 6 * 3600),

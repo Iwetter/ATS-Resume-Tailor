@@ -1,0 +1,36 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, feature/ats-hunter-complete, fix/complete-app-repair]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AUTOAPPLY_ALLOW_REAL_SUBMISSION: "false"
+      CLAUDE_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install document renderer and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-writer fonts-dejavu-core fonts-liberation fonts-crosextra-carlito
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Install browser for fixture tests
+        run: python -m playwright install --with-deps chromium --only-shell
+      - name: Check installed dependencies
+        run: python -m pip check
+      - name: Run tests
+        run: python -m pytest -q --basetemp="$RUNNER_TEMP/ats-tests"
