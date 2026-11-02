@@ -25,9 +25,9 @@ def test_history_counts_distinct_roles_and_uncertain_same_role(tmp_path):
         "Southwest Research Institute,Robotics Student Engineer,Submitted\n"
         "Southwest Research Institute,Embedded Systems Intern,unknown\n"
         "Google,Hardware Engineering Intern,applied\n", encoding="utf-8")
-    assert history_matches(path, "SwRI", "Robotics Student Engineer") == (1, True)
+    assert history_matches(path, "SwRI", "Robotics Student Engineer") == (2, True)
     assert history_matches(path, "SwRI", "Embedded Systems Intern") == (1, True)
-    assert history_matches(path, "SwRI", "Unrelated Role") == (1, False)
+    assert history_matches(path, "SwRI", "Unrelated Role") == (2, False)
     assert history_matches(path, "Marvell", "Robotics Student Engineer") == (0, False)
 
 
