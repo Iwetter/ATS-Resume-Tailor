@@ -70,7 +70,7 @@ def read_history(db_path) -> list[dict[str, str]]:
 
 
 def history_matches(db_path, company: str, title: str = "") -> tuple[int, bool]:
-    """Count unique prior roles and detect the same title, including uncertain ones.
+    """Count unique prior/uncertain roles and detect the same title.
 
     Multiple acknowledgments for a single role must never consume the quota twice.
     An unspecified title counts as one prior application at that employer.
@@ -82,6 +82,6 @@ def history_matches(db_path, company: str, title: str = "") -> tuple[int, bool]:
             continue
         role = record["title"] or "__unspecified__"
         all_roles.add(role)
-        if record["status"] in SUBMITTED:
+        if record["status"] in SUBMITTED | UNCERTAIN:
             submitted_roles.add(role)
     return len(submitted_roles), bool(title_norm and title_norm in all_roles)
