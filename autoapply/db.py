@@ -316,16 +316,26 @@ class AutoStore:
             db.execute("UPDATE submission_intents SET outcome=?,finished_at=? WHERE application_id=?", (outcome, utcnow(), app_id))
 
     def submissions_since(self, since: datetime, employer_key=None, company=None):
-        query = "SELECT COUNT(*) FROM applications WHERE submit_started_at >= ? AND state IN (?,?,?)"
+        query = "SELECT company FROM applications WHERE submit_started_at >= ? AND state IN (?,?,?)"
         args = [since.isoformat(), *SUBMISSION_STATES]
         if employer_key:
             query += " AND employer_key=?"
             args.append(employer_key)
         if company:
-            query += " AND lower(company)=lower(?)"
-            args.append(company)
+            query += " AND company IS NOT NULL"
         with self.connect() as db:
-            return db.execute(query, args).fetchone()[0]
+            rows = db.execute(query, args).fetchall()
+        if not company:
+            return len(rows)
+        from .history import company_key
+        return sum(company_key(r["company"]) == company_key(company) for r in rows)
+
+    def prior_company_application(self, company, exclude_app_id=None, title=""):
+        from .history import company_key, title_key
+        key, role = company_key(company), title_key(title)
+        with self.connect() as db:
+            rows = db.execute("SELECT id,company,title,state FROM applications WHERE state IN (?,?,?)", SUBMISSION_STATES).fetchall()
+        return any(r["id"] != exclude_app_id and company_key(r["company"]) == key and title_key(r["title"]) == role for r in rows)
 
     def recover(self, actor="worker"):
         """Crash recovery. Run at worker start, before any new work."""
