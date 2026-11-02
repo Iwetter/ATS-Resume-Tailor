@@ -56,7 +56,7 @@ class Settings:
     emergency_stop_env: bool = False
     max_per_day: int = 5
     max_per_company_per_day: int = 1
-    max_per_company_total: int = 3
+    max_per_company_total: int = 1
     min_fit_review: float = 45.0
     min_fit_auto: float = 80.0
     trust_model_mappings: bool = False
@@ -130,7 +130,7 @@ def load(**overrides) -> Settings:
         emergency_stop_env=_bool("AUTOAPPLY_EMERGENCY_STOP"),
         max_per_day=_int("AUTOAPPLY_MAX_PER_DAY", 5, 0, 50),
         max_per_company_per_day=_int("AUTOAPPLY_MAX_PER_COMPANY_PER_DAY", 1, 0, 10),
-        max_per_company_total=_int("AUTOAPPLY_MAX_PER_COMPANY_TOTAL", 3, 0, 50),
+        max_per_company_total=_int("AUTOAPPLY_MAX_PER_COMPANY_TOTAL", 1, 0, 50),
         min_fit_review=float(_float("AUTOAPPLY_MIN_FIT_REVIEW", 45.0)),
         min_fit_auto=float(_float("AUTOAPPLY_MIN_FIT_AUTO", 80.0)),
         trust_model_mappings=_bool("AUTOAPPLY_TRUST_MODEL_MAPPINGS"),
