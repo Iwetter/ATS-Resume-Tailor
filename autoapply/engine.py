@@ -36,6 +36,7 @@ from .browser import BrowserFactory, adapter_for, run_application
 from .db import AutoStore
 from .forms import answers_hash, missing_required, norm, resolve
 from .gates import TARGET_TERMS, evaluate_gates
+from .history import company_key, history_matches, title_key
 from .profile import hunter_profile, load_profile
 from .redaction import log
 
@@ -67,7 +68,7 @@ def employer_key(job: Job):
 
 
 def dedupe_key(job: Job):
-    return digest([norm(job.company), norm(re.sub(r"\(.*?\)|-\s*(spring|summer|fall)\s*20\d\d", "", job.title, flags=re.I))])[:24]
+    return digest([company_key(job.company), title_key(job.title)])[:24]
 
 
 class Engine:
@@ -255,7 +256,7 @@ class Engine:
             reasons.append(f"Daily submission cap ({self.settings.max_per_day}) reached.")
         if self.auto.submissions_since(day, company=app["company"]) >= self.settings.max_per_company_per_day:
             reasons.append(f"Per-company daily cap ({self.settings.max_per_company_per_day}) reached for {app['company']}.")
-        if self.auto.submissions_since(datetime(1970, 1, 1, tzinfo=timezone.utc), company=app["company"]) >= self.settings.max_per_company_total:
+        if self.auto.submissions_since(datetime(1970, 1, 1, tzinfo=timezone.utc), company=app["company"]) + history_matches(self.settings.db_path, app["company"], app["title"])[0] >= self.settings.max_per_company_total:
             reasons.append(f"Per-company total cap ({self.settings.max_per_company_total}) reached for {app['company']}.")
         return reasons
 
@@ -285,6 +286,11 @@ class Engine:
             elif self._approval_hash(app["plan"], report) != approval_hash:
                 reasons.append("The form, resume or answers changed since approval; review again.")
             reasons += self._caps(app)
+            prior_count, same_title = history_matches(self.settings.db_path, app["company"], app["title"])
+            if same_title:
+                reasons.append("An application to this employer and role already exists in imported history (or its outcome is unknown).")
+            if self.auto.prior_company_application(app["company"], app["id"], app["title"]):
+                reasons.append("A prior application or unresolved submission at this employer/role already exists.")
             if reasons:
                 refusal.extend(reasons)
                 return False
