@@ -53,6 +53,15 @@ This Summer 2027 internship runs from May to August 2027 in our Atlanta laborato
 
 @pytest.fixture(autouse=True)
 def _no_real_submission(monkeypatch):
+    # Tests must not spend API credits or contact employers. Browser fixture
+    # routes separately abort non-fixture URLs, including in child processes.
+    import socket
+    original_connect = socket.socket.connect
+    def local_only(sock, address):
+        if isinstance(address, tuple) and address[0] not in {'127.0.0.1', '::1', 'localhost'}:
+            raise RuntimeError('External network is disabled in tests')
+        return original_connect(sock, address)
+    monkeypatch.setattr(socket.socket, 'connect', local_only)
     # Real submission can never be enabled by the environment during tests.
     for name in ("AUTOAPPLY_ALLOW_REAL_SUBMISSION", "AUTOAPPLY_EMERGENCY_STOP", "ANTHROPIC_API_KEY", "CLAUDE_ENABLED", "HUNTER_DB"):
         monkeypatch.delenv(name, raising=False)

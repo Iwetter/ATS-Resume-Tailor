@@ -176,6 +176,12 @@ class Engine:
                 return app_id, self._state(app_id)
             if not self.auto.update(app_id, action="preparing", expected=S.QUEUED, state=S.PREPARING, gates=gate.as_dict()):
                 return app_id, self._state(app_id)  # cancelled or changed by a human meanwhile
+            prior, duplicate = history_matches(self.store.path, job.company, job.title, job.source_id)
+            total = self.auto.submissions_since(datetime(1970, 1, 1, tzinfo=timezone.utc), company=job.company)
+            if duplicate or total + prior >= self.settings.max_per_company_total:
+                self.auto.update(app_id, action='blocked_history', expected=S.PREPARING, state=S.BLOCKED,
+                                 reasons=['Prior application history or company limit prevents preparation.'])
+                return app_id, self._state(app_id)
             master, applicant, _ = self._context()
             plan = self._plan(app, job, master)
             adapter, url = adapter_for(job)
@@ -294,8 +300,8 @@ class Engine:
             if reasons:
                 refusal.extend(reasons)
                 return False
-            if not self.auto.begin_submission(app_id, token):
-                refusal.append("Another submission for this job (or a duplicate posting) was already started.")
+            if not self.auto.begin_submission(app_id, token, self.settings):
+                refusal.append("Submission refused: duplicate/history, submission cap, or expired worker lease.")
                 return False
             claimed["value"] = True
             return True

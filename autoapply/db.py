@@ -289,22 +289,46 @@ class AutoStore:
         with self.connect() as db:
             db.execute("UPDATE applications SET lock_token=NULL,lock_expires=NULL WHERE id=? AND lock_token=?", (app_id, token))
 
-    def begin_submission(self, app_id, token):
+    def begin_submission(self, app_id, token, settings=None):
         """Atomically claim the one-and-only submit attempt for this job.
 
         Written *before* the click. If the process dies afterwards, recovery
         turns the row into Unknown and nothing ever re-clicks automatically.
         """
         now = utcnow()
+        from .config import load
+        from .history import company_key, history_matches, title_key
+        settings = settings or load(db_path=self.store.path)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             app = db.execute("SELECT * FROM applications WHERE id=?", (app_id,)).fetchone()
             if not app or app["lock_token"] != token or app["state"] not in (APPROVED, PREPARING):
                 return False
+            if not app['lock_expires'] or datetime.fromisoformat(app['lock_expires']) <= datetime.now(timezone.utc):
+                return False
             if db.execute("SELECT 1 FROM submission_intents WHERE job_key=?", (app["job_key"],)).fetchone():
                 return False
             other = db.execute("SELECT 1 FROM applications WHERE dedupe_key=? AND id<>? AND state IN (?,?,?)", (app["dedupe_key"], app_id, *SUBMISSION_STATES)).fetchone()
             if other:
+                return False
+            # Serialize quota checks with the intent insert. Separate workers
+            # cannot both consume the final company/daily slot.
+            payload = db.execute('SELECT payload FROM jobs WHERE key=?', (app['job_key'],)).fetchone()
+            job = json.loads(payload[0]) if payload else {}
+            for prior in db.execute('SELECT j.payload FROM applications a JOIN jobs j ON j.key=a.job_key WHERE a.id<>? AND (a.state IN (?,?,?) OR a.job_key IN (SELECT job_key FROM submission_intents))', (app_id, *SUBMISSION_STATES)):
+                previous = json.loads(prior[0])
+                if company_key(previous['company']) == company_key(app['company']) and (
+                        previous.get('source_id') == job.get('source_id') or previous.get('url') == job.get('url')):
+                    return False
+            imported, duplicate = history_matches(self.store.path, app['company'], app['title'], job.get('source_id', ''), connection=db)
+            rows = db.execute('SELECT company,title,submit_started_at,submitted_at FROM applications WHERE id<>? AND (state IN (?,?,?) OR job_key IN (SELECT job_key FROM submission_intents))', (app_id, *SUBMISSION_STATES)).fetchall()
+            company_rows = [r for r in rows if company_key(r['company']) == company_key(app['company'])]
+            day = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+            recent = lambda r: (r['submit_started_at'] or r['submitted_at'] or now) >= day
+            if (duplicate or any(title_key(r['title']) == title_key(app['title']) for r in company_rows)
+                    or len(company_rows) + imported >= settings.max_per_company_total
+                    or sum(map(recent, company_rows)) >= settings.max_per_company_per_day
+                    or sum(map(recent, rows)) >= settings.max_per_day):
                 return False
             db.execute("INSERT INTO submission_intents(job_key,application_id,token,started_at) VALUES (?,?,?,?)", (app["job_key"], app_id, token, now))
             db.execute("UPDATE applications SET state=?,submit_started_at=?,updated_at=? WHERE id=?", (SUBMITTING, now, now, app_id))
@@ -316,7 +340,7 @@ class AutoStore:
             db.execute("UPDATE submission_intents SET outcome=?,finished_at=? WHERE application_id=?", (outcome, utcnow(), app_id))
 
     def submissions_since(self, since: datetime, employer_key=None, company=None):
-        query = "SELECT company FROM applications WHERE submit_started_at >= ? AND state IN (?,?,?)"
+        query = "SELECT company FROM applications WHERE COALESCE(submit_started_at,submitted_at,created_at) >= ? AND (state IN (?,?,?) OR job_key IN (SELECT job_key FROM submission_intents))"
         args = [since.isoformat(), *SUBMISSION_STATES]
         if employer_key:
             query += " AND employer_key=?"
@@ -342,12 +366,18 @@ class AutoStore:
         changed = []
         now = datetime.now(timezone.utc)
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             for row in db.execute("SELECT id,job_key FROM applications WHERE state=?", (SUBMITTING,)).fetchall():
+                lease = db.execute('SELECT lock_expires FROM applications WHERE id=?', (row['id'],)).fetchone()[0]
+                if lease and datetime.fromisoformat(lease) > now:
+                    continue
                 db.execute("UPDATE applications SET state=?,last_error=?,lock_token=NULL,lock_expires=NULL,updated_at=? WHERE id=?",
                            (UNKNOWN, "Worker stopped after the submit step began. Verify on the employer site before any retry.", utcnow(), row["id"]))
                 db.execute("UPDATE submission_intents SET outcome=COALESCE(outcome,'unknown-after-restart') WHERE application_id=?", (row["id"],))
                 changed.append((row["id"], row["job_key"], UNKNOWN))
             for row in db.execute("SELECT id,job_key,lock_expires FROM applications WHERE state=? ", (PREPARING,)).fetchall():
+                if row['lock_expires'] and datetime.fromisoformat(row['lock_expires']) > now:
+                    continue
                 # Preparing never clicks submit, so it is safe to requeue.
                 db.execute("UPDATE applications SET state=?,lock_token=NULL,lock_expires=NULL,updated_at=? WHERE id=?", (QUEUED, utcnow(), row["id"]))
                 changed.append((row["id"], row["job_key"], QUEUED))

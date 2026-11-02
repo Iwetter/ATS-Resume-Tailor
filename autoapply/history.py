@@ -8,6 +8,9 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 import re
+import json
+import sqlite3
+from contextlib import closing
 
 # Common brand and legal-name variants. Extend only for confirmed equivalents.
 ALIASES = {
@@ -69,19 +72,36 @@ def read_history(db_path) -> list[dict[str, str]]:
         return records
 
 
-def history_matches(db_path, company: str, title: str = "") -> tuple[int, bool]:
+def history_matches(db_path, company: str, title: str = "", source_id: str = "", *, connection=None) -> tuple[int, bool]:
     """Count unique prior/uncertain roles and detect the same title.
 
     Multiple acknowledgments for a single role must never consume the quota twice.
     An unspecified title counts as one prior application at that employer.
     """
+    if connection is None and Path(db_path).exists():
+        with closing(sqlite3.connect(db_path, timeout=30)) as db, db:
+            return history_matches(db_path, company, title, source_id, connection=db)
+    records = read_history(db_path)
+    if connection is not None:
+        # Append-only snapshots survive CSV removal and dashboard status edits.
+        connection.execute("CREATE TABLE IF NOT EXISTS imported_application_history (company TEXT, title TEXT, status TEXT, source_id TEXT, first_seen TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(company,title,status,source_id))")
+        tables = {r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if {'jobs', 'actions'} <= tables:
+            for payload, status in connection.execute("SELECT payload,status FROM jobs WHERE lower(status) IN ('applied','interview','rejected','withdrawn') OR key IN (SELECT job_key FROM actions WHERE lower(action) IN ('applied','interview','rejected','withdrawn'))"):
+                job = json.loads(payload)
+                records.append(dict(company=company_key(job['company']), title=title_key(job['title']), status='submitted', source_id=job['source_id']))
+        connection.executemany("INSERT OR IGNORE INTO imported_application_history(company,title,status,source_id) VALUES (?,?,?,?)",
+                               [(r['company'], r['title'], r['status'], r['source_id']) for r in records])
+        records = [dict(zip(('company', 'title', 'status', 'source_id'), r)) for r in connection.execute("SELECT company,title,status,source_id FROM imported_application_history")]
     key, title_norm = company_key(company), title_key(title)
     submitted_roles, all_roles = set(), set()
-    for record in read_history(db_path):
+    same_id = False
+    for record in records:
         if record["company"] != key:
             continue
-        role = record["title"] or "__unspecified__"
-        all_roles.add(role)
+        role = record['source_id'] or record["title"] or "__unspecified__"
+        all_roles.add(record['title'])
+        same_id |= bool(source_id and source_id == record['source_id'])
         if record["status"] in SUBMITTED | UNCERTAIN:
             submitted_roles.add(role)
-    return len(submitted_roles), bool(title_norm and title_norm in all_roles)
+    return len(submitted_roles), same_id or bool(title_norm and title_norm in all_roles)

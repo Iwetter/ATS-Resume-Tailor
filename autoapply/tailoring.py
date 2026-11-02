@@ -87,6 +87,8 @@ def tailor_for_job(store, job_key, job, master, settings, claude=None, approved_
                 raise
             notes.append(f"Dropped lowest-ranked project to fit one page: {attempt_projects[-1]}")
             attempt_projects = attempt_projects[:-1]
+    if bundle.pages != 1:
+        export_issues.append('Tailored resume is not exactly one page; automatic submission is blocked.')
     before, after = score_job(job, master, store), score_job(job, final, store)
     omitted = [g for g in ranked if g not in attempt_projects]
     audit = {"source_hash": master.source_hash, "job_key": job_key, "selection_basis": selection_basis, "projects": attempt_projects,

@@ -117,6 +117,7 @@ def test_interrupted_submission_after_restart_alerts_once_and_never_reclicks(tmp
     env.auto.update(app["id"], state=S.APPROVED)
     assert env.auto.begin_submission(app["id"], token)  # the process dies right here, mid-click
     restarted = Worker(env.settings, env.store, env.engine, client_factory=lambda: Mock(requests=0, cache_hits=0), notifier=env.notifier)
+    env.auto.update(app["id"], lock_expires="2000-01-01T00:00:00+00:00")
     restarted.recover()
     restarted.run_once()
     restarted.run_once()
