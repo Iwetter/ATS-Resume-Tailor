@@ -256,7 +256,7 @@ class Engine:
             reasons.append(f"Daily submission cap ({self.settings.max_per_day}) reached.")
         if self.auto.submissions_since(day, company=app["company"]) >= self.settings.max_per_company_per_day:
             reasons.append(f"Per-company daily cap ({self.settings.max_per_company_per_day}) reached for {app['company']}.")
-        if self.auto.submissions_since(datetime(1970, 1, 1, tzinfo=timezone.utc), company=app["company"]) + history_matches(self.settings.db_path, app["company"], app["title"])[0] >= self.settings.max_per_company_total:
+        if self.auto.submissions_since(datetime(1970, 1, 1, tzinfo=timezone.utc), company=app["company"]) + history_matches(self.settings.db_path, app["company"], app.get("title", ""))[0] >= self.settings.max_per_company_total:
             reasons.append(f"Per-company total cap ({self.settings.max_per_company_total}) reached for {app['company']}.")
         return reasons
 
