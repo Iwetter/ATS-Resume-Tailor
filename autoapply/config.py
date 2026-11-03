@@ -75,6 +75,9 @@ class Settings:
     claude_input_usd_per_mtok: float | None = None
     claude_output_usd_per_mtok: float | None = None
     claude_enabled: bool = False
+    ollama_enabled: bool = False
+    ollama_model: str = "llama3.2:3b"
+    ollama_endpoint: str = "http://127.0.0.1:11434"
     health_port: int = 0
     log_level: str = "INFO"
     # Twilio SMS (official SDK). The auth token also validates webhook signatures.
@@ -148,6 +151,9 @@ def load(**overrides) -> Settings:
         claude_input_usd_per_mtok=_float("CLAUDE_INPUT_USD_PER_MTOK"),
         claude_output_usd_per_mtok=_float("CLAUDE_OUTPUT_USD_PER_MTOK"),
         claude_enabled=_bool("CLAUDE_ENABLED"),
+        ollama_enabled=_bool("OLLAMA_ENABLED"),
+        ollama_model=os.environ.get("OLLAMA_MODEL", "llama3.2:3b").strip(),
+        ollama_endpoint=os.environ.get("OLLAMA_ENDPOINT", "http://127.0.0.1:11434").strip().rstrip("/"),
         health_port=_int("HEALTH_PORT", 0, 0, 65535),
         log_level=os.environ.get("LOG_LEVEL", "INFO").upper(),
         twilio_account_sid=os.environ.get("TWILIO_ACCOUNT_SID", "").strip(),

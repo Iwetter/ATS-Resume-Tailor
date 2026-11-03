@@ -202,13 +202,32 @@ class Engine:
 
     def _plan(self, app, job, master):
         from .tailoring import tailor_for_job
+        from .cover_letter import generate_cover_letter
         plan = app.get("plan") or {}
         artifact = next((a for a in self.store.artifacts() if a["key"] == plan.get("artifact_key")), None)
         if artifact and plan.get("source_hash") == master.source_hash and Path(artifact["pdf"]).is_file():
+            if not (plan.get("cover_letter") or {}).get("text"):
+                _, applicant, _ = self._context()
+                plan["cover_letter"] = generate_cover_letter(
+                    master, job, applicant, chosen_projects=tuple(plan.get("projects") or ()),
+                    use_ollama=getattr(self.settings, "ollama_enabled", False),
+                    ollama_model=getattr(self.settings, "ollama_model", "llama3.2:3b"),
+                    ollama_endpoint=getattr(self.settings, "ollama_endpoint", "http://127.0.0.1:11434"),
+                )
+                self.auto.update(app["id"], plan=plan)
             return plan
         new = tailor_for_job(self.store, app["job_key"], job, master, self.settings, self.claude,
                              approved_change_ids=plan.get("approved_change_ids", []), previous_plan=plan if plan.get("source_hash") == master.source_hash else None)
-        new.update(source_hash=master.source_hash, cover_letter=plan.get("cover_letter"))
+        cover_letter = plan.get("cover_letter")
+        if not (cover_letter or {}).get("text"):
+            _, applicant, _ = self._context()
+            cover_letter = generate_cover_letter(
+                master, job, applicant, chosen_projects=tuple(new.get("projects") or ()),
+                use_ollama=getattr(self.settings, "ollama_enabled", False),
+                ollama_model=getattr(self.settings, "ollama_model", "llama3.2:3b"),
+                ollama_endpoint=getattr(self.settings, "ollama_endpoint", "http://127.0.0.1:11434"),
+            )
+        new.update(source_hash=master.source_hash, cover_letter=cover_letter)
         self.auto.audit("worker", "resume_tailored", app["job_key"], app["id"], {"artifact": new["artifact_key"], "projects": new["projects"], "fit_before": new["fit_before"], "fit_after": new["fit_after"]})
         return new
 
@@ -223,7 +242,7 @@ class Engine:
         shutil.copyfile(plan["pdf"], resume)
         cover = None
         letter = plan.get("cover_letter") or {}
-        if letter.get("approved") and letter.get("text"):
+        if letter.get("text"):
             cover = {"text": letter["text"], "path": str(write_cover_letter(letter["text"], applicant, evidence / (resume.stem.replace("_Resume", "") + "_Cover_Letter.pdf")))}
         app = self.auto.application(app_id)
         permission = self.auto.permission(app["employer_key"])
