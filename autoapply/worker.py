@@ -134,6 +134,7 @@ class Worker:
 
     # ---- loop --------------------------------------------------------------------
     def run_once(self):
+        self.recover()  # Expired leases may belong to a worker lost after startup.
         self.heartbeat("scanning")
         scan_result, processed = None, []
         try:

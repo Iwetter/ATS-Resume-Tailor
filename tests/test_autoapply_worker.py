@@ -90,8 +90,8 @@ def test_restart_recovery(aa, worker):
     aa.switch_on()
     jobs = [aa.add_job(aa_job(job_id=str(n), title=f"Hardware Engineering Intern {n} - Summer 2027")) for n in (1, 2)]
     ids = [aa.auto.enqueue(k, aa_job(job_id=str(n), title=f"Hardware Engineering Intern {n} - Summer 2027"), "greenhouse:fixtureco", f"d{n}", "REVIEW", {}) for n, k in zip((1, 2), jobs)]
-    aa.auto.update(ids[0], state=S.SUBMITTING, submit_started_at=utcnow(), lock_token="dead", lock_expires=(datetime.now(timezone.utc) + timedelta(hours=1)).isoformat())
-    aa.auto.update(ids[1], state=S.PREPARING, lock_token="dead", lock_expires=(datetime.now(timezone.utc) + timedelta(hours=1)).isoformat())
+    aa.auto.update(ids[0], state=S.SUBMITTING, submit_started_at=utcnow(), lock_token="dead", lock_expires=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat())
+    aa.auto.update(ids[1], state=S.PREPARING, lock_token="dead", lock_expires=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat())
     aa.store.set("scan_lock", (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat())
     changed = worker.recover()
     assert aa.auto.application(ids[0])["state"] == S.UNKNOWN  # never re-clicked

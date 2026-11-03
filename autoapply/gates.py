@@ -23,7 +23,7 @@ TARGET_TERMS = ("Spring 2027", "Summer 2027")
 # Never rescued, even when "hardware" also appears in the title.
 UNRELATED_TITLE = re.compile(r"\b(?:mechanical|civil|chemical|supply chain|procurement|sourcing|finance|financial|accounting|marketing|sales|business|legal|recruit\w*|human resources|people operations|data scien\w*|machine learning|product manag\w*|ux|ui designer|communications|facilities)\b", re.I)
 # Rescued only when an EE term is also present (e.g. "Embedded Software Engineer").
-SOFT_UNRELATED_TITLE = re.compile(r"\b(?:software engineer(?:ing)?|software developer|manufacturing engineer(?:ing)?|industrial engineer(?:ing)?|quality engineer(?:ing)?)\b", re.I)
+SOFT_UNRELATED_TITLE = re.compile(r"\b(?:software|manufacturing engineer(?:ing)?|industrial engineer(?:ing)?|quality engineer(?:ing)?)\b", re.I)
 EE_RESCUE = re.compile(r"\b(?:embedded|firmware|electrical|hardware|fpga|pcb|electronics)\b", re.I)
 
 
@@ -137,6 +137,8 @@ def evaluate_gates(job: Job, decision: Decision, match: dict | None, profile: Ap
     if decision.eligible:
         add("Hunter eligibility", "pass", "Passes existing Hunter filters.")
     # Discipline.
+    if re.search(r"\b(?:ph\.?d\.?|doctoral|graduate[- ]only|master'?s?)\b", job.title, re.I):
+        add('Undergraduate role', 'fail', 'Title specifies a graduate-level role.', 'prepare')
     if UNRELATED_TITLE.search(job.title) or (SOFT_UNRELATED_TITLE.search(job.title) and not EE_RESCUE.search(job.title)):
         add("Discipline", "fail", "Title indicates an unrelated discipline.", "prepare")
     elif decision.discipline not in allowed_disciplines:
@@ -176,6 +178,10 @@ def evaluate_gates(job: Job, decision: Decision, match: dict | None, profile: Ap
         add("Hard requirements", "unknown", "Unverified: " + "; ".join(f.requirement[:160] for f in unknown_flags[:6]))
     else:
         add("Hard requirements", "pass", "All detected conditions verified as met.")
+    gaps = [d for d in (match or {}).get('details', [])
+            if d['requirement']['priority'] == 'required' and d['status'] != 'supported']
+    if gaps:
+        add('Required resume evidence', 'unknown', 'Verify required qualifications: ' + '; '.join(d['requirement']['text'][:160] for d in gaps))
     # Fit thresholds.
     fit = match["fit"] if match else None
     if fit is None:

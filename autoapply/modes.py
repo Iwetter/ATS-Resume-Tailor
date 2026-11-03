@@ -43,11 +43,25 @@ def run_dry_run(engine) -> dict:
     if master is not None and profile.is_verified(master.source_hash):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
+            pdf = None
             try:
-                bundle = export_resume(master)
-                pdf = tmp / "resume.pdf"
-                pdf.write_bytes(bundle.pdf)
-                check("Master resume exports to a verified one-page PDF", bundle.pages == 1)
+                original = store.master_original() if hasattr(store, "master_original") else None
+                own_docx = original[0] if original and original[1].lower().endswith(".docx") else None
+                if own_docx:
+                    from ats.docx_tailor import export_tailored
+                    result = export_tailored(own_docx, master, master)
+                    if result.get("pdf"):
+                        pdf = tmp / "resume.pdf"
+                        pdf.write_bytes(result["pdf"])
+                        pages = result.get("pages", 1)
+                    else:
+                        pages = 0
+                    check("Master resume exports to a verified one-page PDF", pages == 1, "; ".join(result.get("issues", [])))
+                else:
+                    bundle = export_resume(master)
+                    pdf = tmp / "resume.pdf"
+                    pdf.write_bytes(bundle.pdf)
+                    check("Master resume exports to a verified one-page PDF", bundle.pages == 1)
             except Exception as exc:
                 check("Master resume exports to a verified one-page PDF", False, str(exc)[:200])
                 pdf = None

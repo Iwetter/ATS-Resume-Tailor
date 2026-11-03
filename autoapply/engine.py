@@ -36,6 +36,7 @@ from .browser import BrowserFactory, adapter_for, run_application
 from .db import AutoStore
 from .forms import answers_hash, missing_required, norm, resolve
 from .gates import TARGET_TERMS, evaluate_gates
+from .history import company_key, history_matches, title_key
 from .profile import hunter_profile, load_profile
 from .redaction import log
 
@@ -67,7 +68,7 @@ def employer_key(job: Job):
 
 
 def dedupe_key(job: Job):
-    return digest([norm(job.company), norm(re.sub(r"\(.*?\)|-\s*(spring|summer|fall)\s*20\d\d", "", job.title, flags=re.I))])[:24]
+    return digest([company_key(job.company), title_key(job.title)])[:24]
 
 
 class Engine:
@@ -175,6 +176,12 @@ class Engine:
                 return app_id, self._state(app_id)
             if not self.auto.update(app_id, action="preparing", expected=S.QUEUED, state=S.PREPARING, gates=gate.as_dict()):
                 return app_id, self._state(app_id)  # cancelled or changed by a human meanwhile
+            prior, duplicate = history_matches(self.store.path, job.company, job.title, job.source_id)
+            total = self.auto.submissions_since(datetime(1970, 1, 1, tzinfo=timezone.utc), company=job.company)
+            if duplicate or total + prior >= self.settings.max_per_company_total:
+                self.auto.update(app_id, action='blocked_history', expected=S.PREPARING, state=S.BLOCKED,
+                                 reasons=['Prior application history or company limit prevents preparation.'])
+                return app_id, self._state(app_id)
             master, applicant, _ = self._context()
             plan = self._plan(app, job, master)
             adapter, url = adapter_for(job)
@@ -195,13 +202,32 @@ class Engine:
 
     def _plan(self, app, job, master):
         from .tailoring import tailor_for_job
+        from .cover_letter import generate_cover_letter
         plan = app.get("plan") or {}
         artifact = next((a for a in self.store.artifacts() if a["key"] == plan.get("artifact_key")), None)
         if artifact and plan.get("source_hash") == master.source_hash and Path(artifact["pdf"]).is_file():
+            if not (plan.get("cover_letter") or {}).get("text"):
+                _, applicant, _ = self._context()
+                plan["cover_letter"] = generate_cover_letter(
+                    master, job, applicant, chosen_projects=tuple(plan.get("projects") or ()),
+                    use_ollama=getattr(self.settings, "ollama_enabled", False),
+                    ollama_model=getattr(self.settings, "ollama_model", "llama3.2:3b"),
+                    ollama_endpoint=getattr(self.settings, "ollama_endpoint", "http://127.0.0.1:11434"),
+                )
+                self.auto.update(app["id"], plan=plan)
             return plan
         new = tailor_for_job(self.store, app["job_key"], job, master, self.settings, self.claude,
                              approved_change_ids=plan.get("approved_change_ids", []), previous_plan=plan if plan.get("source_hash") == master.source_hash else None)
-        new.update(source_hash=master.source_hash, cover_letter=plan.get("cover_letter"))
+        cover_letter = plan.get("cover_letter")
+        if not (cover_letter or {}).get("text"):
+            _, applicant, _ = self._context()
+            cover_letter = generate_cover_letter(
+                master, job, applicant, chosen_projects=tuple(new.get("projects") or ()),
+                use_ollama=getattr(self.settings, "ollama_enabled", False),
+                ollama_model=getattr(self.settings, "ollama_model", "llama3.2:3b"),
+                ollama_endpoint=getattr(self.settings, "ollama_endpoint", "http://127.0.0.1:11434"),
+            )
+        new.update(source_hash=master.source_hash, cover_letter=cover_letter)
         self.auto.audit("worker", "resume_tailored", app["job_key"], app["id"], {"artifact": new["artifact_key"], "projects": new["projects"], "fit_before": new["fit_before"], "fit_after": new["fit_after"]})
         return new
 
@@ -216,7 +242,7 @@ class Engine:
         shutil.copyfile(plan["pdf"], resume)
         cover = None
         letter = plan.get("cover_letter") or {}
-        if letter.get("approved") and letter.get("text"):
+        if letter.get("text"):
             cover = {"text": letter["text"], "path": str(write_cover_letter(letter["text"], applicant, evidence / (resume.stem.replace("_Resume", "") + "_Cover_Letter.pdf")))}
         app = self.auto.application(app_id)
         permission = self.auto.permission(app["employer_key"])
@@ -255,7 +281,7 @@ class Engine:
             reasons.append(f"Daily submission cap ({self.settings.max_per_day}) reached.")
         if self.auto.submissions_since(day, company=app["company"]) >= self.settings.max_per_company_per_day:
             reasons.append(f"Per-company daily cap ({self.settings.max_per_company_per_day}) reached for {app['company']}.")
-        if self.auto.submissions_since(datetime(1970, 1, 1, tzinfo=timezone.utc), company=app["company"]) >= self.settings.max_per_company_total:
+        if self.auto.submissions_since(datetime(1970, 1, 1, tzinfo=timezone.utc), company=app["company"]) + history_matches(self.settings.db_path, app["company"], app.get("title", ""))[0] >= self.settings.max_per_company_total:
             reasons.append(f"Per-company total cap ({self.settings.max_per_company_total}) reached for {app['company']}.")
         return reasons
 
@@ -285,11 +311,16 @@ class Engine:
             elif self._approval_hash(app["plan"], report) != approval_hash:
                 reasons.append("The form, resume or answers changed since approval; review again.")
             reasons += self._caps(app)
+            prior_count, same_title = history_matches(self.settings.db_path, app["company"], app["title"])
+            if same_title:
+                reasons.append("An application to this employer and role already exists in imported history (or its outcome is unknown).")
+            if self.auto.prior_company_application(app["company"], app["id"], app["title"]):
+                reasons.append("A prior application or unresolved submission at this employer/role already exists.")
             if reasons:
                 refusal.extend(reasons)
                 return False
-            if not self.auto.begin_submission(app_id, token):
-                refusal.append("Another submission for this job (or a duplicate posting) was already started.")
+            if not self.auto.begin_submission(app_id, token, self.settings):
+                refusal.append("Submission refused: duplicate/history, submission cap, or expired worker lease.")
                 return False
             claimed["value"] = True
             return True

@@ -148,7 +148,8 @@ def test_priority_role_passes_every_gate(master, verified_profile, settings):
 
 
 @pytest.mark.parametrize("title", ["Mechanical Engineering Intern - Summer 2027", "Software Engineer Intern - Summer 2027",
-                                   "Marketing Intern - Summer 2027", "Supply Chain Hardware Intern - Summer 2027", "Data Science Intern - Summer 2027"])
+                                   "Marketing Intern - Summer 2027", "Supply Chain Hardware Intern - Summer 2027", "Data Science Intern - Summer 2027",
+                                   "Software Test Engineer Intern - Summer 2027", "FPGA PhD Intern - Summer 2027"])
 def test_unrelated_disciplines_are_excluded(title, master, verified_profile, settings):
     gate = gate_for(aa_job(title=title), verified_profile, master, settings)
     assert not gate.prepare_ok and not gate.auto_ok
@@ -323,3 +324,18 @@ def test_structured_logs_redact_secrets_and_contact_details():
         assert secret not in line
     assert '"state": "Ready"' in line
     assert redact({"answer": "secret", "nested": [{"phone": "1"}]}) == {"answer": "[redacted]", "nested": [{"phone": "[redacted]"}]}
+
+
+def test_required_resume_evidence_cannot_be_overridden_by_high_score(master, verified_profile, settings):
+    job = aa_job()
+    decision = decide(job, Profile(), Filters(), NOW)
+    match = {'fit': 100, 'details': [{'requirement': {'priority': 'required', 'text': 'Required proprietary hardware experience'}, 'status': 'missing'}]}
+    gate = evaluate_gates(job, decision, match, verified_profile, master_hash=master.source_hash,
+                          permission={'prefill': True, 'auto_submit': True, 'terms_reviewed_at': NOW}, settings=settings)
+    assert not gate.auto_ok
+    assert any(c.name == 'Required resume evidence' and c.status == 'unknown' for c in gate.checks)
+
+
+@pytest.mark.parametrize('location,country', [('Toronto, CA, Canada', ''), ('Remote', 'US;CA')])
+def test_ambiguous_country_never_passes_auto(master, verified_profile, settings, location, country):
+    assert not gate_for(aa_job(location=location, country=country), verified_profile, master, settings).auto_ok

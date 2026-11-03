@@ -68,6 +68,9 @@ def classify_discipline(title: str, description: str = "") -> tuple[str, str]:
 
     Returns ("Other", why) only with an explanation the UI can show.
     """
+    unrelated = re.search(r'\b(mechanical|civil|marketing|business)\b', title, re.I)
+    if unrelated:
+        return 'Other', f'Title names another field ({unrelated[0]}).'
     for label, pattern in DISCIPLINES:
         if re.search(pattern, title, re.I):
             return label, "title"
@@ -111,11 +114,15 @@ def internship_terms(title: str, description: str) -> tuple[str, ...]:
 
 def us_location(job: Job) -> str:
     countries = {x.strip().upper() for x in job.country.split(";") if x.strip()}
-    if countries & {"US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"}:
+    if countries and countries <= {"US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"}:
         return "met"
+    if countries & {"US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"}:
+        return 'unknown'
     if countries:
         return "unmet"
     loc = job.location
+    if re.search(r'\b(Canada|United Kingdom|Germany|France|India|Japan|Australia|Singapore|Mexico|Netherlands|Sweden|Taiwan|China|Korea)\b', loc, re.I):
+        return 'unmet'
     if re.search(r"\b(United States|USA|U\.S\.|US Remote|Remote.*US)\b", loc, re.I):
         return "met"
     if any(re.search(r"\b" + re.escape(s) + r"\b", loc) for s in US_STATES) or re.search(r",\s*(?:" + "|".join(US_ABBREVIATIONS) + r")\b", loc):
