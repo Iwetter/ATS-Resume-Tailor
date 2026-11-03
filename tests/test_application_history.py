@@ -138,3 +138,24 @@ def test_prior_history_blocks_before_tailoring(aa, monkeypatch):
     monkeypatch.setattr(aa.engine, '_plan', lambda *a: pytest.fail('Prior employer must not consume tailoring work'))
     aa.engine.process()
     assert aa.auto.application(job_key=key)['state'] == S.BLOCKED
+
+def test_history_dates_and_requisition_synonyms(aa):
+    csv_path = aa.store.path.parent / "application_history.csv"
+    csv_path.write_text(
+        "company,title,status,requisition_id,date\n"
+        "Lockheed Martin Space,Power Systems Intern,applied,REQ-777,2026-10-01\n"
+        "Anduril Industries,Firmware Co-op,submitted,REQ-888,2026-10-15\n",
+        encoding="utf-8"
+    )
+    records = read_history(aa.store.path)
+    assert len(records) == 2
+    assert records[0]["company"] == "lockheed martin"
+    assert records[0]["source_id"] == "REQ-777"
+    assert records[0]["applied_at"] == "2026-10-01"
+    assert records[1]["company"] == "anduril"
+    assert records[1]["source_id"] == "REQ-888"
+
+    assert history_matches(aa.store.path, "Lockheed Martin", source_id="REQ-777") == (1, True)
+    assert history_matches(aa.store.path, "Anduril", source_id="REQ-888") == (1, True)
+    assert history_matches(aa.store.path, "Lockheed Martin", "Different Title", "OTHER-ID") == (1, False)
+
